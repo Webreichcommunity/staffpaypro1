@@ -6,6 +6,11 @@ export const QRScanner = ({ onResult }) => {
   const [active, setActive] = useState(false);
   const [error, setError] = useState("");
   const scannerRef = useRef(null);
+  const resultRef = useRef(onResult);
+
+  useEffect(() => {
+    resultRef.current = onResult;
+  }, [onResult]);
 
   useEffect(() => {
     if (!active) return undefined;
@@ -18,20 +23,23 @@ export const QRScanner = ({ onResult }) => {
         async (decodedText) => {
           await scanner.stop().catch(() => {});
           setActive(false);
-          onResult(decodedText);
+          resultRef.current(decodedText);
         },
       )
-      .catch(() => setError("Camera permission denied. Please allow camera access to scan the shop QR."));
+      .catch(() => {
+        setActive(false);
+        setError("Camera permission denied or camera could not start. Please allow camera access and try again.");
+      });
 
     return () => {
       scanner.stop().catch(() => {});
     };
-  }, [active, onResult]);
+  }, [active]);
 
   return (
     <Card>
       <div className="grid gap-4">
-        <Button className="w-full !min-h-14 text-base" onClick={() => setActive(true)}>
+        <Button className="w-full !min-h-14 text-base" onClick={() => { setError(""); setActive(true); }}>
           Scan QR
         </Button>
         {active && <div id="staffpay-qr-reader" className="overflow-hidden rounded-2xl bg-gray-950" />}

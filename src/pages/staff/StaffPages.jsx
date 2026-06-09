@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { jsPDF } from "jspdf";
 import { collection, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
-import { Banknote, CalendarCheck, CheckCircle2, Clock3, Download, QrCode, UserCircle } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Banknote, CalendarCheck, CheckCircle2, Clock3, Download, Loader2, QrCode, RotateCcw, UserCircle } from "lucide-react";
 import { db } from "../../Firebase/config";
 import { AttendanceStatusBadge } from "../../components/attendance/AttendanceStatusBadge";
 import { LocationPermissionBox } from "../../components/attendance/LocationPermissionBox";
@@ -14,6 +15,7 @@ import { SalarySlipTemplate } from "../../components/salary/SalarySlipTemplate";
 import { useAuth } from "../../hooks/useAuth";
 import {
   applyLeave,
+  getAttendanceRef,
   getShop,
   getTodayAttendance,
   punchIn,
@@ -108,8 +110,10 @@ export const StaffDashboard = () => {
   const [today, setToday] = useState(null);
 
   useEffect(() => {
-    if (!userProfile?.shopId || !userProfile?.uid) return;
-    getTodayAttendance(userProfile.shopId, userProfile.uid).then(setToday);
+    if (!userProfile?.shopId || !userProfile?.uid) return undefined;
+    return onSnapshot(getAttendanceRef(userProfile.shopId, formatDateKey(), userProfile.uid), (snapshot) => {
+      setToday(snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null);
+    });
   }, [userProfile?.shopId, userProfile?.uid]);
 
   const latestSlip = [...reports].sort((a, b) => String(b.month).localeCompare(String(a.month)))[0];
@@ -120,14 +124,21 @@ export const StaffDashboard = () => {
         <p className="text-sm text-orange-200">Today status</p>
         <div className="mt-2 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-black">{today?.status || "Not punched in"}</h2>
-            <p className="mt-1 text-sm text-gray-300">Scan shop QR to mark today’s attendance</p>
+            <h2 className="text-2xl font-black">{today?.punchInTime ? "You are punched in" : today?.status || "Not punched in"}</h2>
+            <p className="mt-1 text-sm text-gray-300">
+              {today?.punchInTime ? `Punch in time: ${toTimeLabel(today.punchInTime)}` : "Scan shop QR to mark today's attendance"}
+            </p>
+            {today?.punchOutTime && <p className="mt-1 text-sm text-gray-300">Punch out time: {toTimeLabel(today.punchOutTime)}</p>}
           </div>
           <QrCode className="h-10 w-10 text-orange-300" />
         </div>
-        <a href="/staff/scan-attendance" className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 py-4 text-base font-bold text-white shadow-orange-glow">
-          <QrCode className="h-5 w-5" /> Scan QR to Punch
-        </a>
+        {today?.punchOutTime ? (
+          <div className="mt-5 rounded-xl bg-green-500/15 px-4 py-3 text-center text-sm font-bold text-green-200">Attendance completed for today</div>
+        ) : (
+          <Link to="/staff/scan-attendance" className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 py-4 text-base font-bold text-white shadow-orange-glow">
+            <QrCode className="h-5 w-5" /> {today?.punchInTime ? "Scan QR to Punch Out" : "Scan QR to Punch In"}
+          </Link>
+        )}
       </Card>
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard icon={CheckCircle2} label="Present" value={records.filter((record) => record.status === "present" || record.status === "late").length} />
@@ -159,10 +170,10 @@ export const StaffPunch = () => (
         <QrCode className="h-10 w-10" />
       </div>
       <h2 className="mt-4 text-2xl font-black text-gray-950">Scan shop QR</h2>
-      <p className="mx-auto mt-2 max-w-md text-sm text-gray-500">Scan shop QR to mark today’s attendance. Expired QR codes will not work.</p>
-      <a href="/staff/scan-attendance" className="mt-5 inline-flex w-full items-center justify-center rounded-xl bg-orange-600 px-4 py-4 text-base font-bold text-white shadow-orange-glow">
+      <p className="mx-auto mt-2 max-w-md text-sm text-gray-500">Scan shop QR to mark today's attendance. Expired QR codes will not work.</p>
+      <Link to="/staff/scan-attendance" className="mt-5 inline-flex w-full items-center justify-center rounded-xl bg-orange-600 px-4 py-4 text-base font-bold text-white shadow-orange-glow">
         Scan QR
-      </a>
+      </Link>
     </Card>
   </div>
 );
@@ -178,12 +189,16 @@ export const StaffScanAttendance = () => {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
   const preparePunch = useCallback(async (nextToken = token, nextShopId = shopId) => {
     setError("");
     setMessage("");
+    setVerifying(true);
+    setLocation(null);
     try {
       if (!nextToken || !nextShopId) return;
+      if (!userProfile?.shopId || !userProfile?.uid) throw new Error("Your staff profile is still loading. Please try again.");
       if (nextShopId !== userProfile.shopId) throw new Error("QR belongs to a different shop.");
       if (!shop?.location?.lat || !shop?.location?.lng) throw new Error("No shop location set. Please contact admin.");
       if (userProfile.isActive === false) throw new Error("Your staff account is inactive.");
@@ -199,6 +214,8 @@ export const StaffScanAttendance = () => {
       setMessage("QR and location verified. You can mark attendance now.");
     } catch (err) {
       setError(err.message);
+    } finally {
+      setVerifying(false);
     }
   }, [shop, shopId, token, userProfile]);
 
@@ -214,18 +231,17 @@ export const StaffScanAttendance = () => {
     return { action: "done", title: "Attendance completed", description: "Punch In successful and Punch Out successful for today." };
   }, [attendance]);
 
-  const handleScanResult = (decodedText) => {
+  const handleScanResult = useCallback((decodedText) => {
     try {
       const url = new URL(decodedText);
       const nextShopId = url.searchParams.get("shopId");
       const nextToken = url.searchParams.get("token");
       setShopId(nextShopId);
       setToken(nextToken);
-      preparePunch(nextToken, nextShopId);
     } catch {
       setError("QR invalid. Please scan the live shop QR again.");
     }
-  };
+  }, []);
 
   const submitPunch = async (type) => {
     setLoading(true);
@@ -250,9 +266,29 @@ export const StaffScanAttendance = () => {
     <div className="grid gap-5">
       <LocationPermissionBox />
       {!token && <QRScanner onResult={handleScanResult} />}
+      {token && !shop && (
+        <Card className="text-center">
+          <Loader2 className="mx-auto h-7 w-7 animate-spin text-orange-600" />
+          <p className="mt-3 font-bold text-gray-950">Loading shop attendance...</p>
+        </Card>
+      )}
+      {verifying && (
+        <Card className="text-center">
+          <Loader2 className="mx-auto h-7 w-7 animate-spin text-orange-600" />
+          <p className="mt-3 font-bold text-gray-950">Verifying QR and shop location...</p>
+          <p className="mt-1 text-sm text-gray-500">Please allow location permission when asked.</p>
+        </Card>
+      )}
       {message && <Alert>{message}</Alert>}
-      {error && <Alert tone="danger">{error}</Alert>}
-      {location && (
+      {error && (
+        <div className="grid gap-3">
+          <Alert tone="danger">{error}</Alert>
+          <Button tone="light" onClick={() => { setToken(""); setShopId(userProfile?.shopId || ""); setError(""); setMessage(""); }}>
+            <RotateCcw className="h-4 w-4" /> Scan Another QR
+          </Button>
+        </div>
+      )}
+      {!verifying && location && (
         <PunchCard
           state={state}
           distance={distance}

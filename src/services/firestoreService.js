@@ -7,6 +7,7 @@ import {
   getDocs,
   onSnapshot,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   Timestamp,
@@ -138,46 +139,53 @@ export const getTodayAttendance = async (shopId, staffId, dateKey = formatDateKe
 
 export const punchIn = async ({ userProfile, shop, token, location }) => {
   const date = formatDateKey();
-  const existing = await getTodayAttendance(userProfile.shopId, userProfile.uid, date);
-  if (existing?.punchInTime) throw new Error("Already punched in for today.");
   const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
   const lateAfter = minutesFromTime(shop.openingTime || "10:00") + Number(shop.graceMinutes || 0);
   const isLate = nowMinutes > lateAfter;
+  const attendanceRef = getAttendanceRef(userProfile.shopId, date, userProfile.uid);
 
-  await setDoc(getAttendanceRef(userProfile.shopId, date, userProfile.uid), {
-    staffId: userProfile.uid,
-    shopId: userProfile.shopId,
-    date,
-    punchInTime: serverTimestamp(),
-    punchInLocation: location,
-    punchInToken: token,
-    status: isLate ? "late" : "present",
-    dayStatus: "pending",
-    isLate,
-    lateMinutes: isLate ? nowMinutes - lateAfter : 0,
-    markedBy: "self",
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(attendanceRef);
+    const existing = snapshot.exists() ? snapshot.data() : null;
+    if (existing?.punchInTime) throw new Error(`You already punched in today at ${existing.punchInTime?.toDate?.().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) || "the recorded time"}.`);
+    transaction.set(attendanceRef, {
+      staffId: userProfile.uid,
+      shopId: userProfile.shopId,
+      date,
+      punchInTime: serverTimestamp(),
+      punchInLocation: location,
+      punchInToken: token,
+      status: isLate ? "late" : "present",
+      dayStatus: "pending",
+      isLate,
+      lateMinutes: isLate ? nowMinutes - lateAfter : 0,
+      markedBy: "self",
+      createdAt: existing?.createdAt || serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
   });
 };
 
 export const punchOut = async ({ userProfile, shop, token, location }) => {
   const date = formatDateKey();
-  const existing = await getTodayAttendance(userProfile.shopId, userProfile.uid, date);
-  if (!existing?.punchInTime) throw new Error("Punch in before punching out.");
-  if (existing?.punchOutTime) throw new Error("Attendance already completed for today.");
-  const totalMinutes = minutesBetweenTimestamps(existing.punchInTime, new Date());
-  const totalWorkingHours = Number((totalMinutes / 60).toFixed(2));
-  const dayStatus = totalWorkingHours >= Number(shop.fullDayHours || 8) ? "full-day" : "half-day";
-
-  await updateDoc(getAttendanceRef(userProfile.shopId, date, userProfile.uid), {
-    punchOutTime: serverTimestamp(),
-    punchOutLocation: location,
-    punchOutToken: token,
-    totalWorkingHours,
-    dayStatus,
-    status: dayStatus === "half-day" ? "half-day" : existing.isLate ? "late" : "present",
-    updatedAt: serverTimestamp(),
+  const attendanceRef = getAttendanceRef(userProfile.shopId, date, userProfile.uid);
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(attendanceRef);
+    const existing = snapshot.exists() ? snapshot.data() : null;
+    if (!existing?.punchInTime) throw new Error("Punch in before punching out.");
+    if (existing?.punchOutTime) throw new Error("Attendance already completed for today.");
+    const totalMinutes = minutesBetweenTimestamps(existing.punchInTime, new Date());
+    const totalWorkingHours = Number((totalMinutes / 60).toFixed(2));
+    const dayStatus = totalWorkingHours >= Number(shop.fullDayHours || 8) ? "full-day" : "half-day";
+    transaction.update(attendanceRef, {
+      punchOutTime: serverTimestamp(),
+      punchOutLocation: location,
+      punchOutToken: token,
+      totalWorkingHours,
+      dayStatus,
+      status: dayStatus === "half-day" ? "half-day" : existing.isLate ? "late" : "present",
+      updatedAt: serverTimestamp(),
+    });
   });
 };
 
