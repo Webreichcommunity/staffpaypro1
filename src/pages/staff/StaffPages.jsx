@@ -236,6 +236,9 @@ export const StaffScanAttendance = () => {
       const url = new URL(decodedText);
       const nextShopId = url.searchParams.get("shopId");
       const nextToken = url.searchParams.get("token");
+      if (!nextShopId || !nextToken) throw new Error("Missing QR attendance details.");
+      setError("");
+      setMessage("");
       setShopId(nextShopId);
       setToken(nextToken);
     } catch {
