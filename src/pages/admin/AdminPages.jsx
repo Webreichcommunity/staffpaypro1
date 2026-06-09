@@ -350,7 +350,7 @@ export const AdminStaffForm = () => {
 
   return (
     <div>
-      <PageHeader title="Add Staff" subtitle="Use the staff member's own Google account email. Staff must verify this Google account after password login." />
+      <PageHeader title="Add Staff" subtitle="Use the staff member's own email. Staff verify this Google account after password login where supported." />
       {error && <div className="mb-4"><Alert tone="danger">{error}</Alert></div>}
       <StaffForm values={values} loading={loading} onChange={(key, value) => setValues((current) => ({ ...current, [key]: value }))} onSubmit={submit} />
     </div>

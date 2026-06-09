@@ -2,7 +2,7 @@ import { Button, Card, Input, Select } from "../common/UI";
 
 const fields = [
   ["name", "Full name", "text"],
-  ["email", "Staff Google account email", "email"],
+  ["email", "Staff login email", "email"],
   ["password", "Password", "password"],
   ["phone", "Phone", "tel"],
   ["address", "Address", "text"],

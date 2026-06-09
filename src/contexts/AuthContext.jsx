@@ -4,6 +4,10 @@ import { auth } from "../Firebase/config";
 import { ensureAdminShop, getUserProfile } from "../services/firestoreService";
 import { AuthContext } from "./authContextValue";
 import { loginWithIdentifier } from "../services/authService";
+import { isIOSDevice } from "../utils/platformUtils";
+
+const isStaffSessionVerified = (profile, signInProvider) =>
+  profile?.role !== "staff" || isIOSDevice() || signInProvider === "google.com";
 
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
@@ -32,7 +36,7 @@ export const AuthProvider = ({ children }) => {
         const tokenResult = await user.getIdTokenResult();
         const shopId = await ensureAdminShop(user, profile);
         setUserProfile(shopId ? { ...profile, shopId } : profile);
-        setStaffGoogleVerified(profile.role !== "staff" || tokenResult.signInProvider === "google.com");
+        setStaffGoogleVerified(isStaffSessionVerified(profile, tokenResult.signInProvider));
       } catch (error) {
         setAuthError(error.message);
       } finally {
@@ -54,7 +58,7 @@ export const AuthProvider = ({ children }) => {
       login: async (identifier, password) => {
         const result = await loginWithIdentifier(identifier, password);
         const tokenResult = await result.credential.user.getIdTokenResult();
-        setStaffGoogleVerified(result.profile?.role !== "staff" || tokenResult.signInProvider === "google.com");
+        setStaffGoogleVerified(isStaffSessionVerified(result.profile, tokenResult.signInProvider));
         return result;
       },
       logout: () => {

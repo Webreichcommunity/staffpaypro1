@@ -12,6 +12,7 @@ import {
 } from "firebase/auth";
 import { collection, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, where } from "firebase/firestore";
 import { auth, db, firebaseConfig } from "../Firebase/config";
+import { isIOSDevice } from "../utils/platformUtils";
 
 const normalizeLoginAlias = (value = "") => value.trim().toLowerCase();
 
@@ -33,7 +34,10 @@ export const loginWithIdentifier = async (identifier, password) => {
   const profileSnapshot = await getDoc(doc(db, "users", credential.user.uid));
   const profile = profileSnapshot.exists() ? profileSnapshot.data() : null;
 
-  if (profile?.role === "staff") {
+  // Firebase Google popups lose their opener/session state in iOS Safari and
+  // installed iOS PWAs. The password session and Firestore profile have
+  // already been verified at this point, so avoid the unsupported popup there.
+  if (profile?.role === "staff" && !isIOSDevice()) {
     try {
       const expectedEmail = String(profile.email || credential.user.email || "").trim().toLowerCase();
       const provider = new GoogleAuthProvider();

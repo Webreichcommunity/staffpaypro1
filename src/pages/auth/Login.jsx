@@ -33,7 +33,7 @@ export const Login = () => {
     try {
       await login(form.identifier, form.password);
     } catch (err) {
-      setError(err.message || "Login failed. Please check email, password, and Google account.");
+      setError(err.message || "Login failed. Please check your email and password.");
     } finally {
       setBusy(false);
     }
@@ -81,7 +81,7 @@ export const Login = () => {
           </form>
           <div className="mt-4 flex gap-2 rounded-lg bg-orange-50 p-3 text-xs font-medium leading-5 text-gray-700">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-orange-600" />
-            Staff must verify the same Google account registered in their staff profile after password login.
+            Staff verify their registered Google account where supported. On iPhone and iPad, secure email and password login is used for compatibility.
           </div>
           <p className="mt-5 text-center text-xs text-gray-500">
             Need the first owner account?{" "}
