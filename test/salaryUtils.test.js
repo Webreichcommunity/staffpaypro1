@@ -67,3 +67,16 @@ test("editable paid off-day allowance changes the deduction boundary", () => {
   assert.equal(report.salaryDeductedAbsentDays, 1);
   assert.equal(report.payableDays, 25);
 });
+
+test("None weekly off counts every calendar day as a working day", () => {
+  const report = calculateSalary({
+    staff,
+    shop: { weeklyOffDay: "None", monthlyPaidOffDays: 0 },
+    month: "2026-06",
+    attendanceRecords: presentRecords(30),
+  });
+
+  assert.equal(report.workingDays, 30);
+  assert.equal(report.payableDays, 30);
+  assert.equal(report.netSalary, 10000);
+});

@@ -19,9 +19,9 @@ export const getMonthDateKeys = (monthKey) =>
   Array.from({ length: monthDays(monthKey) }, (_, index) => `${monthKey}-${pad(index + 1)}`);
 
 export const countWorkingDays = (monthKey, weeklyOffDay = "") => {
-  const off = weeklyOffDay?.toLowerCase();
+  const off = String(weeklyOffDay || "").trim().toLowerCase();
   return getMonthDateKeys(monthKey).filter((dateKey) => {
-    if (!off) return true;
+    if (!off || off === "none") return true;
     const day = new Date(`${dateKey}T00:00:00`).toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
     return day !== off;
   }).length;

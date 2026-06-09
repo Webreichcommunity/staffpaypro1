@@ -588,13 +588,17 @@ export const AdminShopSettings = () => {
               <Input key={key} label={label} type={type} min={key === "monthlyPaidOffDays" ? 0 : undefined} step={key === "monthlyPaidOffDays" ? 1 : undefined} value={values[key] ?? ""} onChange={(event) => update(key, event.target.value)} />
             ))}
             <Select label="Weekly off day" value={values.weeklyOffDay || "Sunday"} onChange={(event) => update("weeklyOffDay", event.target.value)}>
+              <option value="None">None (Every day working)</option>
               {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((day) => <option key={day}>{day}</option>)}
             </Select>
             <Input label="Shop latitude" type="number" step="any" value={Number.isFinite(displayedLocation.lat) ? displayedLocation.lat : ""} onChange={(event) => update("location", { ...values.location, lat: event.target.value, accuracy: 0 })} />
             <Input label="Shop longitude" type="number" step="any" value={Number.isFinite(displayedLocation.lng) ? displayedLocation.lng : ""} onChange={(event) => update("location", { ...values.location, lng: event.target.value, accuracy: 0 })} />
           </div>
           <Alert>
-            Weekly off-days are excluded from scheduled working days. The paid absence allowance lets each staff member miss up to {Number(values.monthlyPaidOffDays ?? 4)} additional working days per month before salary deduction begins.
+            {values.weeklyOffDay === "None"
+              ? "No weekly off is selected, so every calendar day is counted as a scheduled working day. "
+              : `${values.weeklyOffDay || "Sunday"}s are excluded from scheduled working days. `}
+            The paid absence allowance lets each staff member miss up to {Number(values.monthlyPaidOffDays ?? 4)} additional working days per month before salary deduction begins.
           </Alert>
           {values.location?.accuracy > 0 && (
             <p className="text-sm font-medium text-gray-600">
