@@ -1,4 +1,4 @@
-const CACHE_NAME = "staffpay-pro-v3";
+const CACHE_NAME = "staffpay-pro-v4";
 const APP_SHELL = ["/", "/login", "/manifest.json", "/logo.png", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
