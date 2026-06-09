@@ -28,7 +28,9 @@ The setup form creates:
 - `shops/{uid}` default shop settings
 - `loginNames/{adminId}` and `loginNames/{username}` aliases
 
-Admin login accepts email, admin ID, or username plus password. Staff login uses email/password. Admin-created staff accounts use a secondary Firebase app instance so the admin session is not logged out.
+Admin login accepts email, admin ID, or username plus password. Staff login uses email/password followed by matching Google account verification. Admin-created staff accounts use a secondary Firebase app instance so the admin session is not logged out.
+
+Enable the Google provider in Firebase Authentication before using staff login.
 
 For production, keep this setup route protected by Firestore rules or remove it after the first admin is created.
 
@@ -37,7 +39,6 @@ For production, keep this setup route protected by Firestore rules or remove it 
 - `users`
 - `shops`
 - `staff`
-- `attendanceTokens`
 - `attendance/{shopId}/dates/{yyyy-mm-dd}/records/{staffId}`
 - `leaves`
 - `salaryReports`
@@ -50,7 +51,7 @@ Attendance punch timestamps are written with Firebase `serverTimestamp()`. Staff
 ## Features
 
 - Role protected admin and staff routes
-- Admin dashboard, staff management, shop settings, live rotating QR, attendance, leaves, salary reports, slips, and payments
-- Staff mobile PWA dashboard, QR scan, GPS radius validation, punch in/out, leave requests, attendance history, profile, and salary slips
+- Admin dashboard, staff management, shop settings, locally rotating QR, attendance, leaves, salary reports, slips, and payments
+- Staff mobile PWA dashboard, password plus matching-Google-account verification, QR scan, GPS radius validation, punch in/out, leave requests, attendance history, profile, and salary slips
 - Salary PDF download with monthly calculations
 - PWA manifest, app icon, service worker, and installable mobile layout

@@ -32,7 +32,6 @@ import { useAuth } from "../../hooks/useAuth";
 import { createStaffAccount } from "../../services/authService";
 import {
   correctAttendance,
-  createAttendanceToken,
   deleteAdvance,
   deletePayment,
   deleteSalaryReport,
@@ -54,7 +53,8 @@ import {
 } from "../../services/firestoreService";
 import { exportToCsv } from "../../utils/csvUtils";
 import { formatDateKey, formatMonthKey, getMonthDateKeys, toTimeLabel } from "../../utils/dateUtils";
-import { getBrowserLocation } from "../../utils/locationUtils";
+import { getBrowserLocation, normalizeLocation } from "../../utils/locationUtils";
+import { createRotatingQrCode } from "../../utils/qrUtils";
 import { money, pdfMoney } from "../../utils/salaryUtils";
 
 const useShopId = () => {
@@ -88,12 +88,12 @@ const useAdminSnapshot = () => {
 };
 
 const PageHeader = ({ title, subtitle, action }) => (
-  <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-    <div>
-      <h2 className="text-2xl font-black text-gray-950">{title}</h2>
-      {subtitle && <p className="mt-1 text-sm text-gray-500">{subtitle}</p>}
+  <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+    <div className="min-w-0">
+      <h2 className="text-xl font-bold text-gray-950 sm:text-2xl">{title}</h2>
+      {subtitle && <p className="mt-0.5 max-w-3xl text-sm font-medium leading-5 text-gray-600">{subtitle}</p>}
     </div>
-    {action}
+    {action && <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">{action}</div>}
   </div>
 );
 
@@ -168,9 +168,12 @@ const downloadSalaryPdf = ({ report, shop, staff }) => {
     ["Monthly Salary", pdfMoney(report.monthlySalary)],
     ["Working Days", String(report.workingDays || 0)],
     ["Payable Days", String(report.payableDays || 0)],
+    ["Paid Off Days Used", String(report.paidOffDaysUsed || 0)],
+    ["Salary-Deducted Absence Days", String(report.salaryDeductedAbsentDays || 0)],
     ["Present / Absent / Half Days", `${report.presentDays || 0} / ${report.absentDays || 0} / ${report.halfDays || 0}`],
     ["Paid / Unpaid Leaves", `${report.paidLeaves || 0} / ${report.unpaidLeaves || 0}`],
     ["Attendance Salary", pdfMoney(report.attendanceSalary)],
+    ["Attendance / Leave Deduction", pdfMoney(report.absentDeduction)],
     ["Bonus", pdfMoney(report.bonus)],
     ["Overtime", pdfMoney(report.overtimeAmount)],
     ["Advance Deduction", pdfMoney(report.advanceDeduction)],
@@ -216,7 +219,7 @@ export const AdminDashboard = () => {
   const salaryPending = reports.filter((report) => report.month === formatMonthKey() && report.paymentStatus !== "paid");
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-4">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
         <StatCard icon={Users} label="Total Staff" value={activeStaff.length} />
         <StatCard icon={CheckCircle2} label="Present Today" value={present.length} />
@@ -225,7 +228,7 @@ export const AdminDashboard = () => {
         <StatCard icon={RefreshCw} label="Pending Leaves" value={pendingLeaves.length} />
         <StatCard icon={Banknote} label="Salary Pending" value={salaryPending.length} />
       </div>
-      <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <Card>
           <div className="mb-4 flex items-center justify-between">
             <h3 className="font-bold text-gray-950">Today Attendance Summary</h3>
@@ -347,7 +350,7 @@ export const AdminStaffForm = () => {
 
   return (
     <div>
-      <PageHeader title="Add Staff" subtitle="Creates a Firebase Auth account using a secondary app, then stores staff and user profiles." />
+      <PageHeader title="Add Staff" subtitle="Use the staff member's own Google account email. Staff must verify this Google account after password login." />
       {error && <div className="mb-4"><Alert tone="danger">{error}</Alert></div>}
       <StaffForm values={values} loading={loading} onChange={(key, value) => setValues((current) => ({ ...current, [key]: value }))} onSubmit={submit} />
     </div>
@@ -405,7 +408,7 @@ export const AdminStaffDetail = () => {
   const staffPayments = payments.filter((item) => item.staffId === staff.uid).sort((a, b) => String(b.paymentDate).localeCompare(String(a.paymentDate)));
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-4">
       <PageHeader
         title={staff.name}
         subtitle={`${staff.designation || "Staff"} - ${staff.email}`}
@@ -441,11 +444,12 @@ export const AdminStaffDetail = () => {
           { key: "advanceDate", label: "Paid On" },
           { key: "amount", label: "Amount", render: (row) => money(row.amount) },
           { key: "deductionMonth", label: "Deduct Month" },
+          { key: "deductionStatus", label: "Salary Deduction", render: (row) => reports.some((report) => report.staffId === staff.uid && report.month === row.deductionMonth && report.advanceIds?.includes(row.id)) ? <Badge tone="paid">Included in report</Badge> : <Badge tone="pending">Pending</Badge> },
           { key: "notes", label: "Note", render: (row) => row.notes || "--" },
           { key: "actions", label: "Actions", render: (row) => <div className="flex gap-2"><Button tone="light" onClick={() => setAdvanceModal(row)}>Edit</Button><Button tone="danger" onClick={() => window.confirm("Delete this advance record?") && deleteAdvance(row.id)}>Delete</Button></div> },
         ]} rows={staffAdvances} />
       </Card>
-      <div className="grid gap-5 xl:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-2">
         <Card><h3 className="mb-4 font-bold text-gray-950">Salary History</h3><Table columns={[
           { key: "month", label: "Month" }, { key: "netSalary", label: "Net Salary", render: (row) => money(row.netSalary) }, { key: "paymentStatus", label: "Status", render: (row) => <Badge tone={row.paymentStatus}>{row.paymentStatus}</Badge> },
         ]} rows={staffReports} /></Card>
@@ -464,21 +468,21 @@ export const AdminStaffDetail = () => {
 
 export const LiveQR = () => {
   const { shopId, shop, staff } = useAdminSnapshot();
-  const [token, setToken] = useState("");
+  const [qrCode, setQrCode] = useState("");
   const [countdown, setCountdown] = useState(60);
   const [attendance, setAttendance] = useState([]);
 
   useEffect(() => {
     if (!shopId) return undefined;
-    const create = async () => {
-      setToken(await createAttendanceToken(shopId));
+    const rotate = () => {
+      setQrCode(createRotatingQrCode());
       setCountdown(60);
     };
-    create();
-    const tokenTimer = setInterval(create, 60000);
+    rotate();
+    const rotationTimer = setInterval(rotate, 60000);
     const secondTimer = setInterval(() => setCountdown((value) => (value <= 1 ? 60 : value - 1)), 1000);
     return () => {
-      clearInterval(tokenTimer);
+      clearInterval(rotationTimer);
       clearInterval(secondTimer);
     };
   }, [shopId]);
@@ -488,16 +492,16 @@ export const LiveQR = () => {
     return listenAttendanceForDate(shopId, formatDateKey(), setAttendance);
   }, [shopId]);
 
-  const qrUrl = token ? `${window.location.origin}/staff/scan-attendance?shopId=${shopId}&token=${token}` : "";
+  const qrUrl = qrCode ? `${window.location.origin}/staff/scan-attendance?shopId=${shopId}&qr=${qrCode}` : "";
 
   return (
     <div>
       <PageHeader
         title="Live QR Attendance"
-        subtitle="Display this screen at the shop. Staff must scan the live rotating QR every 60 seconds."
+        subtitle="Display this screen at the shop. The QR changes visually every 60 seconds; attendance is secured by staff login and shop location."
         action={<a href={`/?shopId=${shopId}`} target="_blank" rel="noreferrer"><Button tone="dark"><QrCode className="h-4 w-4" /> Open Public Display</Button></a>}
       />
-      <div className="grid gap-5 xl:grid-cols-[480px_1fr]">
+      <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
         <QRDisplay value={qrUrl} countdown={countdown} shopName={shop?.shopName} />
         <Card>
           <h3 className="mb-4 font-bold text-gray-950">Today live punch-ins</h3>
@@ -530,10 +534,14 @@ export const AdminShopSettings = () => {
     fullDayHours: 8,
     halfDayHours: 4,
     weeklyOffDay: "Sunday",
+    monthlyPaidOffDays: 4,
     attendanceRadiusMeters: 100,
     location: { lat: 0, lng: 0 },
   });
   const [message, setMessage] = useState("");
+  const [locationError, setLocationError] = useState("");
+  const [capturingLocation, setCapturingLocation] = useState(false);
+  const displayedLocation = normalizeLocation(values.location);
 
   useEffect(() => {
     if (!shopId) return;
@@ -546,13 +554,20 @@ export const AdminShopSettings = () => {
     <div>
       <PageHeader title="Shop Settings" subtitle="Control attendance radius, GPS location, working hours, grace time, and salary day rules." />
       {message && <div className="mb-4"><Alert>{message}</Alert></div>}
+      {locationError && <div className="mb-4"><Alert tone="danger">{locationError}</Alert></div>}
       <Card>
         <form
-          className="grid gap-5"
+          className="grid gap-4"
           onSubmit={async (event) => {
             event.preventDefault();
-            await saveShopSettings(shopId, values);
-            setMessage("Shop settings updated.");
+            setMessage("");
+            setLocationError("");
+            try {
+              await saveShopSettings(shopId, values);
+              setMessage("Shop settings and attendance location updated.");
+            } catch (error) {
+              setLocationError(error.message);
+            }
           }}
         >
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -567,18 +582,56 @@ export const AdminShopSettings = () => {
               ["graceMinutes", "Grace time in minutes", "number"],
               ["fullDayHours", "Minimum full-day working hours", "number"],
               ["halfDayHours", "Minimum half-day working hours", "number"],
+              ["monthlyPaidOffDays", "Paid absence allowance per month", "number"],
               ["attendanceRadiusMeters", "Attendance radius in meters", "number"],
             ].map(([key, label, type]) => (
-              <Input key={key} label={label} type={type} value={values[key] || ""} onChange={(event) => update(key, event.target.value)} />
+              <Input key={key} label={label} type={type} min={key === "monthlyPaidOffDays" ? 0 : undefined} step={key === "monthlyPaidOffDays" ? 1 : undefined} value={values[key] ?? ""} onChange={(event) => update(key, event.target.value)} />
             ))}
             <Select label="Weekly off day" value={values.weeklyOffDay || "Sunday"} onChange={(event) => update("weeklyOffDay", event.target.value)}>
               {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((day) => <option key={day}>{day}</option>)}
             </Select>
-            <Input label="Shop latitude" type="number" value={values.location?.lat || ""} onChange={(event) => update("location", { ...values.location, lat: event.target.value })} />
-            <Input label="Shop longitude" type="number" value={values.location?.lng || ""} onChange={(event) => update("location", { ...values.location, lng: event.target.value })} />
+            <Input label="Shop latitude" type="number" step="any" value={Number.isFinite(displayedLocation.lat) ? displayedLocation.lat : ""} onChange={(event) => update("location", { ...values.location, lat: event.target.value, accuracy: 0 })} />
+            <Input label="Shop longitude" type="number" step="any" value={Number.isFinite(displayedLocation.lng) ? displayedLocation.lng : ""} onChange={(event) => update("location", { ...values.location, lng: event.target.value, accuracy: 0 })} />
           </div>
+          <Alert>
+            Weekly off-days are excluded from scheduled working days. The paid absence allowance lets each staff member miss up to {Number(values.monthlyPaidOffDays ?? 4)} additional working days per month before salary deduction begins.
+          </Alert>
+          {values.location?.accuracy > 0 && (
+            <p className="text-sm font-medium text-gray-600">
+              Captured shop-location accuracy: approximately {values.location.accuracy}m.
+              {values.location.accuracy > 75 && " Capture again outdoors or near a window for better attendance checks."}
+            </p>
+          )}
+          {Number.isFinite(displayedLocation.lat) && Number.isFinite(displayedLocation.lng) && !(displayedLocation.lat === 0 && displayedLocation.lng === 0) && (
+            <a
+              className="text-sm font-bold text-orange-700 underline"
+              href={`https://www.google.com/maps?q=${displayedLocation.lat},${displayedLocation.lng}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Verify saved shop location on Google Maps
+            </a>
+          )}
           <div className="flex flex-wrap gap-3">
-            <Button type="button" tone="dark" onClick={async () => update("location", await getBrowserLocation())}>
+            <Button
+              type="button"
+              tone="dark"
+              loading={capturingLocation}
+              onClick={async () => {
+                setCapturingLocation(true);
+                setMessage("");
+                setLocationError("");
+                try {
+                  const location = await getBrowserLocation({ timeout: 15000, desiredAccuracy: 20 });
+                  update("location", location);
+                  setMessage(`Shop location captured with approximately ${location.accuracy}m accuracy. Verify the map pin, then save settings.`);
+                } catch (error) {
+                  setLocationError(error.message);
+                } finally {
+                  setCapturingLocation(false);
+                }
+              }}
+            >
               <MapPin className="h-4 w-4" />
               Use Current Location as Shop Location
             </Button>
@@ -793,6 +846,13 @@ export const AdminSalary = () => {
   };
 
   const visibleReports = reports.filter((report) => report.month === month && (selectedStaff === "all" || report.staffId === selectedStaff));
+  const selectedAdvances = advances
+    .filter((advance) => advance.deductionMonth === month && (selectedStaff === "all" || advance.staffId === selectedStaff))
+    .map((advance) => ({
+      ...advance,
+      deductionStatus: reports.some((report) => report.month === month && report.staffId === advance.staffId && report.advanceIds?.includes(advance.id)) ? "included" : "pending",
+    }));
+  const selectedAdvanceTotal = selectedAdvances.reduce((sum, advance) => sum + Number(advance.amount || 0), 0);
 
   return (
     <div>
@@ -813,21 +873,44 @@ export const AdminSalary = () => {
           <Button className="self-end" loading={loading} onClick={generate}>Generate Report</Button>
         </div>
       </Card>
+      <div className="mb-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard icon={CalendarCheck} label="Monthly Paid Off-Days" value={Number(shop?.monthlyPaidOffDays ?? 4)} helper="Deduction starts after these missed working days" />
+        <StatCard icon={HandCoins} label="Advances To Deduct" value={money(selectedAdvanceTotal)} helper={`${selectedAdvances.length} advance record(s) in ${month}`} />
+        <StatCard icon={Users} label="Reports Generated" value={visibleReports.length} />
+        <StatCard icon={Banknote} label="Net Salary Total" value={money(visibleReports.reduce((sum, report) => sum + Number(report.netSalary || 0), 0))} />
+      </div>
       <Table
         columns={[
           { key: "staffName", label: "Staff" },
           { key: "monthlySalary", label: "Monthly", render: (row) => money(row.monthlySalary) },
           { key: "presentDays", label: "Present" },
-          { key: "absentDays", label: "Absent" },
+          { key: "paidOffDaysUsed", label: "Paid Off Used", render: (row) => row.paidOffDaysUsed || 0 },
+          { key: "salaryDeductedAbsentDays", label: "Deducted Absence", render: (row) => row.salaryDeductedAbsentDays || 0 },
           { key: "halfDays", label: "Half" },
           { key: "advanceDeduction", label: "Advance", render: (row) => money(row.advanceDeduction) },
-          { key: "totalDeductions", label: "Deductions", render: (row) => money(row.totalDeductions) },
+          { key: "totalDeductions", label: "Advance + Other", render: (row) => money(row.totalDeductions) },
           { key: "netSalary", label: "Net Payable", render: (row) => <b>{money(row.netSalary)}</b> },
           { key: "paymentStatus", label: "Status", render: (row) => <Badge tone={row.paymentStatus}>{row.paymentStatus}</Badge> },
           { key: "actions", label: "Actions", render: (row) => <div className="flex gap-2"><Button tone="light" onClick={() => setEditingReport(row)}>Edit</Button><Button tone="light" onClick={() => downloadSalaryPdf({ report: row, shop, staff: staff.find((member) => member.uid === row.staffId) })}>Download</Button><Button tone="danger" onClick={() => window.confirm("Delete this salary report?") && deleteSalaryReport(row.id)}>Delete</Button></div> },
         ]}
         rows={visibleReports}
       />
+      <Card className="mt-5">
+        <h3 className="mb-1 font-black text-gray-950">Advance deductions for {month}</h3>
+        <p className="mb-4 text-sm font-medium text-gray-700">These recorded advances are automatically deducted when salary reports are generated.</p>
+        <Table
+          columns={[
+            { key: "staffName", label: "Staff" },
+            { key: "advanceDate", label: "Advance Paid On" },
+            { key: "deductionMonth", label: "Deduction Month" },
+            { key: "amount", label: "Amount", render: (row) => money(row.amount) },
+            { key: "deductionStatus", label: "Status", render: (row) => <Badge tone={row.deductionStatus === "included" ? "paid" : "pending"}>{row.deductionStatus === "included" ? "Included in report" : "Pending deduction"}</Badge> },
+            { key: "notes", label: "Note", render: (row) => row.notes || "--" },
+          ]}
+          rows={selectedAdvances}
+          emptyText="No advances scheduled for this salary month"
+        />
+      </Card>
       {editingReport && <SalaryReportEditModal report={editingReport} onClose={() => setEditingReport(null)} onSubmit={async (values) => {
         await updateSalaryReport(editingReport.id, values, editingReport);
         setEditingReport(null);
@@ -845,15 +928,15 @@ export const AdminSalarySlips = () => {
     <div>
       <PageHeader title="Salary Slips" subtitle="Preview and download professional salary slips for staff." />
       <div className="mb-5 max-w-xs"><MonthFilter value={month} onChange={setMonth} /></div>
-      <div className="grid gap-5 xl:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         {visible.map((report) => (
-          <Card key={report.id}>
+          <section key={report.id} className="grid gap-2">
             <SalarySlipTemplate report={report} shop={shop} staff={staff.find((member) => member.uid === report.staffId)} />
-            <Button className="mt-4 w-full" onClick={() => downloadSalaryPdf({ report, shop, staff: staff.find((member) => member.uid === report.staffId) })}>
+            <Button className="w-full sm:w-max" onClick={() => downloadSalaryPdf({ report, shop, staff: staff.find((member) => member.uid === report.staffId) })}>
               <Download className="h-4 w-4" />
               Download PDF
             </Button>
-          </Card>
+          </section>
         ))}
       </div>
       {!visible.length && <EmptyState title="No salary slips generated" description="Generate salary reports first." />}
@@ -981,7 +1064,8 @@ export const AdminReports = () => {
         <Table columns={[
           { key: "staffName", label: "Staff" },
           { key: "presentDays", label: "Present" },
-          { key: "absentDays", label: "Absent" },
+          { key: "paidOffDaysUsed", label: "Paid Off Used", render: (row) => row.paidOffDaysUsed || 0 },
+          { key: "salaryDeductedAbsentDays", label: "Deducted Absence", render: (row) => row.salaryDeductedAbsentDays || 0 },
           { key: "advanceDeduction", label: "Advance", render: (row) => money(row.advanceDeduction) },
           { key: "netSalary", label: "Net Salary", render: (row) => money(row.netSalary) },
           { key: "paymentStatus", label: "Status", render: (row) => <Badge tone={row.paymentStatus}>{row.paymentStatus}</Badge> },

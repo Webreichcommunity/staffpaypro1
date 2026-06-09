@@ -17,6 +17,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../Firebase/config";
 import { formatDateKey, minutesBetweenTimestamps, minutesFromTime } from "../utils/dateUtils";
+import { isValidLocation, normalizeLocation } from "../utils/locationUtils";
 import { calculateSalary } from "../utils/salaryUtils";
 
 export const getUserProfile = async (uid) => {
@@ -42,6 +43,7 @@ export const ensureAdminShop = async (user, profile) => {
       fullDayHours: 8,
       halfDayHours: 4,
       weeklyOffDay: "Sunday",
+      monthlyPaidOffDays: 4,
       attendanceRadiusMeters: 100,
       location: { lat: 0, lng: 0 },
       createdAt: serverTimestamp(),
@@ -52,24 +54,34 @@ export const ensureAdminShop = async (user, profile) => {
   return shopId;
 };
 
-export const saveShopSettings = async (shopId, values) =>
-  setDoc(
+export const saveShopSettings = async (shopId, values) => {
+  const location = normalizeLocation(values.location);
+  const attendanceRadiusMeters = Number(values.attendanceRadiusMeters);
+  const monthlyPaidOffDays = Number(values.monthlyPaidOffDays ?? 4);
+  if (!isValidLocation(location)) throw new Error("Set a valid shop latitude and longitude before saving.");
+  if (!Number.isFinite(attendanceRadiusMeters) || attendanceRadiusMeters <= 0) {
+    throw new Error("Attendance radius must be greater than 0 meters.");
+  }
+  if (!Number.isInteger(monthlyPaidOffDays) || monthlyPaidOffDays < 0) {
+    throw new Error("Monthly paid absence allowance must be a whole number of 0 or more days.");
+  }
+
+  return setDoc(
     doc(db, "shops", shopId),
     {
       ...values,
       graceMinutes: Number(values.graceMinutes || 0),
       fullDayHours: Number(values.fullDayHours || 8),
       halfDayHours: Number(values.halfDayHours || 4),
-      attendanceRadiusMeters: Number(values.attendanceRadiusMeters || 100),
-      location: {
-        lat: Number(values.location?.lat || values.lat || 0),
-        lng: Number(values.location?.lng || values.lng || 0),
-      },
+      monthlyPaidOffDays,
+      attendanceRadiusMeters,
+      location,
       updatedAt: serverTimestamp(),
       createdAt: values.createdAt || serverTimestamp(),
     },
     { merge: true },
   );
+};
 
 export const listenCollection = (collectionName, constraints, callback) => {
   const q = query(collection(db, collectionName), ...constraints);
@@ -98,32 +110,6 @@ export const deleteStaff = async (staffId) =>
     deleteDoc(doc(db, "users", staffId)),
   ]);
 
-export const createAttendanceToken = async (shopId) => {
-  const token = crypto.randomUUID();
-  const expiresAt = new Date(Date.now() + 60000);
-  await addDoc(collection(db, "attendanceTokens"), {
-    shopId,
-    token,
-    date: formatDateKey(),
-    createdAt: serverTimestamp(),
-    expiresAt,
-    isActive: true,
-  });
-  return token;
-};
-
-export const validateAttendanceToken = async ({ token, shopId }) => {
-  const snapshot = await getDocs(
-    query(collection(db, "attendanceTokens"), where("token", "==", token), where("shopId", "==", shopId)),
-  );
-  const tokenDoc = snapshot.docs[0];
-  if (!tokenDoc) throw new Error("QR invalid. Please scan the live shop QR again.");
-  const data = tokenDoc.data();
-  const expiry = data.expiresAt?.toDate ? data.expiresAt.toDate() : new Date(data.expiresAt);
-  if (!data.isActive || expiry.getTime() < Date.now()) throw new Error("QR expired. Please scan the refreshed code.");
-  return { id: tokenDoc.id, ...data };
-};
-
 export const getShop = async (shopId) => {
   const snapshot = await getDoc(doc(db, "shops", shopId));
   return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
@@ -137,7 +123,7 @@ export const getTodayAttendance = async (shopId, staffId, dateKey = formatDateKe
   return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
 };
 
-export const punchIn = async ({ userProfile, shop, token, location }) => {
+export const punchIn = async ({ userProfile, shop, location }) => {
   const date = formatDateKey();
   const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
   const lateAfter = minutesFromTime(shop.openingTime || "10:00") + Number(shop.graceMinutes || 0);
@@ -154,7 +140,6 @@ export const punchIn = async ({ userProfile, shop, token, location }) => {
       date,
       punchInTime: serverTimestamp(),
       punchInLocation: location,
-      punchInToken: token,
       status: isLate ? "late" : "present",
       dayStatus: "pending",
       isLate,
@@ -166,7 +151,7 @@ export const punchIn = async ({ userProfile, shop, token, location }) => {
   });
 };
 
-export const punchOut = async ({ userProfile, shop, token, location }) => {
+export const punchOut = async ({ userProfile, shop, location }) => {
   const date = formatDateKey();
   const attendanceRef = getAttendanceRef(userProfile.shopId, date, userProfile.uid);
   await runTransaction(db, async (transaction) => {
@@ -180,7 +165,6 @@ export const punchOut = async ({ userProfile, shop, token, location }) => {
     transaction.update(attendanceRef, {
       punchOutTime: serverTimestamp(),
       punchOutLocation: location,
-      punchOutToken: token,
       totalWorkingHours,
       dayStatus,
       status: dayStatus === "half-day" ? "half-day" : existing.isLate ? "late" : "present",
@@ -339,6 +323,13 @@ export const generateSalaryReport = async ({ shopId, staff, month, shop, attenda
     generatedAt: serverTimestamp(),
     generatedBy,
     advanceIds: advances.map((advance) => advance.id),
+    advanceDetails: advances.map((advance) => ({
+      id: advance.id,
+      amount: Number(advance.amount || 0),
+      advanceDate: advance.advanceDate || "",
+      deductionMonth: advance.deductionMonth || month,
+      notes: advance.notes || "",
+    })),
     amountPaid,
     paymentStatus,
   };
@@ -440,5 +431,3 @@ export const deletePayment = async (paymentId, reportId) => {
   await deleteDoc(doc(db, "payments", paymentId));
   await refreshReportPaymentStatus(reportId);
 };
-
-export const deleteAttendanceToken = (id) => deleteDoc(doc(db, "attendanceTokens", id));

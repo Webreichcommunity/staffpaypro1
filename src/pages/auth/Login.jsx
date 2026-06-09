@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
-import { LockKeyhole, Mail } from "lucide-react";
+import { LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { Alert, Button, Card, Input } from "../../components/common/UI";
 import { useAuth } from "../../hooks/useAuth";
 
 export const Login = () => {
-  const { login, currentUser, userRole, loading, authError } = useAuth();
+  const { login, currentUser, userRole, isAccessVerified, loading, authError } = useAuth();
   const [form, setForm] = useState({ identifier: "", password: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -17,12 +17,12 @@ export const Login = () => {
   const destination = requestedPath || (userRole === "admin" ? "/admin/dashboard" : "/staff/dashboard");
 
   useEffect(() => {
-    if (!loading && currentUser && userRole) {
+    if (!loading && currentUser && userRole && isAccessVerified) {
       navigate(destination, { replace: true });
     }
-  }, [currentUser, destination, loading, navigate, userRole]);
+  }, [currentUser, destination, isAccessVerified, loading, navigate, userRole]);
 
-  if (!loading && currentUser && userRole) {
+  if (!loading && currentUser && userRole && isAccessVerified) {
     return <Navigate to={destination} replace />;
   }
 
@@ -32,8 +32,8 @@ export const Login = () => {
     setError("");
     try {
       await login(form.identifier, form.password);
-    } catch {
-      setError("Login failed. Please check email and password.");
+    } catch (err) {
+      setError(err.message || "Login failed. Please check email, password, and Google account.");
     } finally {
       setBusy(false);
     }
@@ -79,6 +79,10 @@ export const Login = () => {
             </div>
             <Button type="submit" loading={busy} className="w-full !min-h-12">Login</Button>
           </form>
+          <div className="mt-4 flex gap-2 rounded-lg bg-orange-50 p-3 text-xs font-medium leading-5 text-gray-700">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-orange-600" />
+            Staff must verify the same Google account registered in their staff profile after password login.
+          </div>
           <p className="mt-5 text-center text-xs text-gray-500">
             Need the first owner account?{" "}
             <Link to="/create-admin" className="font-bold text-orange-700 hover:text-orange-800">

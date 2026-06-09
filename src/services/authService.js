@@ -1,5 +1,15 @@
 import { initializeApp } from "firebase/app";
-import { createUserWithEmailAndPassword, getAuth, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import {
+  createUserWithEmailAndPassword,
+  getAuth,
+  GoogleAuthProvider,
+  linkWithPopup,
+  reauthenticateWithPopup,
+  signInWithCredential,
+  signInWithEmailAndPassword,
+  signOut,
+  unlink,
+} from "firebase/auth";
 import { collection, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, where } from "firebase/firestore";
 import { auth, db, firebaseConfig } from "../Firebase/config";
 
@@ -19,7 +29,40 @@ export const resolveLoginEmail = async (identifier) => {
 
 export const loginWithIdentifier = async (identifier, password) => {
   const email = await resolveLoginEmail(identifier);
-  return signInWithEmailAndPassword(auth, email, password);
+  let credential = await signInWithEmailAndPassword(auth, email, password);
+  const profileSnapshot = await getDoc(doc(db, "users", credential.user.uid));
+  const profile = profileSnapshot.exists() ? profileSnapshot.data() : null;
+
+  if (profile?.role === "staff") {
+    try {
+      const expectedEmail = String(profile.email || credential.user.email || "").trim().toLowerCase();
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ login_hint: expectedEmail, prompt: "select_account" });
+      const hasGoogleProvider = credential.user.providerData.some((item) => item.providerId === "google.com");
+      const googleResult = hasGoogleProvider
+        ? await reauthenticateWithPopup(credential.user, provider)
+        : await linkWithPopup(credential.user, provider);
+      const googleCredential = GoogleAuthProvider.credentialFromResult(googleResult);
+      const googleEmail = googleResult.user.providerData
+        .find((item) => item.providerId === "google.com")
+        ?.email?.trim().toLowerCase();
+
+      if (!expectedEmail || googleEmail !== expectedEmail || !googleCredential) {
+        if (!hasGoogleProvider) {
+          await unlink(credential.user, "google.com").catch(() => {});
+        }
+        throw new Error(`Select the Google account registered for this staff profile: ${expectedEmail}.`);
+      }
+
+      await signOut(auth);
+      credential = await signInWithCredential(auth, googleCredential);
+    } catch (error) {
+      await signOut(auth).catch(() => {});
+      throw error;
+    }
+  }
+
+  return { credential, profile };
 };
 
 export const hasExistingAdmin = async () => {
@@ -60,6 +103,7 @@ export const createMainAdminAccount = async (form) => {
       fullDayHours: 8,
       halfDayHours: 4,
       weeklyOffDay: "Sunday",
+      monthlyPaidOffDays: 4,
       attendanceRadiusMeters: 100,
       location: { lat: 0, lng: 0 },
       createdAt: serverTimestamp(),
