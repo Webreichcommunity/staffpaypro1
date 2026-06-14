@@ -1,49 +1,57 @@
 import { useEffect, useState } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { Link } from "react-router-dom";
-import { QRCodeCanvas } from "qrcode.react";
 import { Clock3, LogIn, MapPin, ScanLine, ShieldCheck, Smartphone } from "lucide-react";
 import { db } from "../../Firebase/config";
 import { Alert, Button, Card, Loader } from "../../components/common/UI";
 import { BrandMark } from "../../components/common/Brand";
-import { createRotatingQrCode } from "../../utils/qrUtils";
+import { QRDisplay } from "../../components/attendance/QRDisplay";
+import { useAuth } from "../../hooks/useAuth";
+import { useLiveQr } from "../../hooks/useLiveQr";
+import { getShop } from "../../services/firestoreService";
+
+const PUBLIC_SHOP_KEY = "staffpay-public-shop-id";
 
 export const PublicLiveQR = () => {
+  const { userProfile, loading: authLoading } = useAuth();
   const [shop, setShop] = useState(null);
-  const [qrCode, setQrCode] = useState("");
-  const [countdown, setCountdown] = useState(60);
   const [error, setError] = useState("");
+  const { qrCode, countdown } = useLiveQr(shop?.id);
 
   useEffect(() => {
+    if (authLoading) return;
+
     const loadShop = async () => {
+      const requestedShopId = new URLSearchParams(window.location.search).get("shopId");
+      const rememberedShopId = window.localStorage.getItem(PUBLIC_SHOP_KEY);
+      const preferredShopId = requestedShopId || userProfile?.shopId || rememberedShopId;
+
       try {
-        const requestedShopId = new URLSearchParams(window.location.search).get("shopId");
+        if (preferredShopId) {
+          // The public display only needs the shop ID to create the same QR as
+          // the admin screen. Shop details may be protected for logged-out users.
+          setShop({ id: preferredShopId });
+          window.localStorage.setItem(PUBLIC_SHOP_KEY, preferredShopId);
+          const shopDetails = await getShop(preferredShopId);
+          if (shopDetails) setShop(shopDetails);
+          return;
+        }
+
         const snapshot = await getDocs(collection(db, "shops"));
         const shops = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
-        setShop(shops.find((item) => item.id === requestedShopId) || shops[0] || null);
+        if (shops.length !== 1) {
+          throw new Error("Open Public Display from Admin Live QR once to connect this screen to the correct shop.");
+        }
+        setShop(shops[0]);
+        window.localStorage.setItem(PUBLIC_SHOP_KEY, shops[0].id);
       } catch (err) {
-        setError(err.message);
+        if (!preferredShopId) setError(err.message);
       }
     };
-    loadShop();
-  }, []);
+    void loadShop();
+  }, [authLoading, userProfile?.shopId]);
 
-  useEffect(() => {
-    if (!shop?.id) return undefined;
-    const rotate = () => {
-      setQrCode(createRotatingQrCode());
-      setCountdown(60);
-    };
-    rotate();
-    const rotationTimer = window.setInterval(rotate, 60000);
-    const secondTimer = window.setInterval(() => setCountdown((value) => (value <= 1 ? 60 : value - 1)), 1000);
-    return () => {
-      window.clearInterval(rotationTimer);
-      window.clearInterval(secondTimer);
-    };
-  }, [shop?.id]);
-
-  if (!shop && !error) return <Loader label="Opening live attendance" />;
+  if ((!shop && !error) || authLoading) return <Loader label="Opening live attendance" />;
 
   const qrUrl = qrCode ? `${window.location.origin}/staff/scan-attendance?shopId=${shop.id}&qr=${qrCode}` : "";
 
@@ -59,23 +67,18 @@ export const PublicLiveQR = () => {
           <div className="grid gap-4">
             <Card className="overflow-hidden !p-0">
               <div className="px-3 py-4 sm:px-5 sm:py-5">
-                <div className="mx-auto grid aspect-square w-full max-w-[320px] place-items-center rounded-xl bg-orange-50 p-2">
-                  {qrUrl ? (
-                    <div className="rounded-lg bg-white">
-                      <QRCodeCanvas value={qrUrl} size={280} includeMargin level="H" className="h-auto max-w-full" />
-                    </div>
-                  ) : (
-                    <div className="aspect-square w-full animate-pulse rounded-2xl bg-white" />
-                  )}
+                <div className="mx-auto max-w-sm">
+                  <QRDisplay
+                    value={qrUrl}
+                    countdown={countdown}
+                    shopName={shop.shopName || "Shop Attendance"}
+                    className="!border-0 !shadow-none"
+                  />
                 </div>
                 <div className="mt-3 text-center">
                   <p className="text-xs font-bold uppercase tracking-wide text-orange-600">Live attendance</p>
-                  <h1 className="mt-1 text-xl font-bold text-gray-950">{shop.shopName || "Shop Attendance"}</h1>
+                  <h1 className="mt-1 text-xl font-bold text-gray-950">Scan to mark attendance</h1>
                   <p className="mt-1 text-sm font-medium text-gray-700">Scan the QR above to punch in or punch out</p>
-                </div>
-                <div className="mx-auto mt-3 flex max-w-sm items-center justify-center gap-2 rounded-full bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700">
-                  <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-green-500" />
-                  Live QR refreshes in {countdown} seconds
                 </div>
                 <p className="mx-auto mt-3 max-w-lg text-center text-sm font-medium leading-5 text-gray-700">
                   Open StaffPay Pro on your phone, tap Scan QR, and point the camera at this screen.

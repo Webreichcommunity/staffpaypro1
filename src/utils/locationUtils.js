@@ -33,6 +33,10 @@ const locationErrorMessage = (error) => {
 
 export const getBrowserLocation = ({ timeout = 12000, desiredAccuracy = DESIRED_ACCURACY_METERS } = {}) =>
   new Promise((resolve, reject) => {
+    if (!window.isSecureContext) {
+      reject(new Error("Location access requires a secure HTTPS connection. Open the deployed app URL and try again."));
+      return;
+    }
     if (!navigator.geolocation) {
       reject(new Error("Location is not supported by this device."));
       return;

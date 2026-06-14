@@ -1,8 +1,8 @@
 import { QRCodeCanvas } from "qrcode.react";
 import { Card } from "../common/UI";
 
-export const QRDisplay = ({ value, countdown, shopName }) => (
-  <Card className="text-center">
+export const QRDisplay = ({ value, countdown, shopName, className = "" }) => (
+  <Card className={`text-center ${className}`}>
     <div className="mx-auto grid aspect-square w-full max-w-xs place-items-center rounded-xl border border-orange-200 bg-orange-50 p-3">
       {value ? <QRCodeCanvas value={value} size={260} includeMargin level="H" className="h-auto w-full max-w-[260px]" /> : <div className="aspect-square w-full max-w-56 animate-pulse rounded-lg bg-white" />}
     </div>

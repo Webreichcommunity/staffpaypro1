@@ -4,6 +4,9 @@ import { LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { Alert, Button, Card, Input } from "../../components/common/UI";
 import { useAuth } from "../../hooks/useAuth";
 
+const PENDING_ROUTE_KEY = "staffpay-pending-route";
+const safePendingRoute = (value) => (typeof value === "string" && value.startsWith("/") && !value.startsWith("//") ? value : "");
+
 export const Login = () => {
   const { login, currentUser, userRole, isAccessVerified, loading, authError } = useAuth();
   const [form, setForm] = useState({ identifier: "", password: "" });
@@ -14,10 +17,16 @@ export const Login = () => {
   const requestedPath = location.state?.from
     ? `${location.state.from.pathname}${location.state.from.search || ""}`
     : "";
-  const destination = requestedPath || (userRole === "admin" ? "/admin/dashboard" : "/staff/dashboard");
+  const pendingPath = safePendingRoute(window.sessionStorage.getItem(PENDING_ROUTE_KEY));
+  const destination = safePendingRoute(requestedPath) || pendingPath || (userRole === "admin" ? "/admin/dashboard" : "/staff/dashboard");
+
+  useEffect(() => {
+    if (requestedPath) window.sessionStorage.setItem(PENDING_ROUTE_KEY, requestedPath);
+  }, [requestedPath]);
 
   useEffect(() => {
     if (!loading && currentUser && userRole && isAccessVerified) {
+      window.sessionStorage.removeItem(PENDING_ROUTE_KEY);
       navigate(destination, { replace: true });
     }
   }, [currentUser, destination, isAccessVerified, loading, navigate, userRole]);

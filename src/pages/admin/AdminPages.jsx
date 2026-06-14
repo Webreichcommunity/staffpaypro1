@@ -29,6 +29,7 @@ import { SalarySlipTemplate } from "../../components/salary/SalarySlipTemplate";
 import { StaffForm } from "../../components/staff/StaffForm";
 import { AboutWebReich } from "../../components/common/Brand";
 import { useAuth } from "../../hooks/useAuth";
+import { useLiveQr } from "../../hooks/useLiveQr";
 import { createStaffAccount } from "../../services/authService";
 import {
   correctAttendance,
@@ -54,7 +55,6 @@ import {
 import { exportToCsv } from "../../utils/csvUtils";
 import { formatDateKey, formatMonthKey, getMonthDateKeys, toTimeLabel } from "../../utils/dateUtils";
 import { getBrowserLocation, normalizeLocation } from "../../utils/locationUtils";
-import { createRotatingQrCode } from "../../utils/qrUtils";
 import { money, pdfMoney } from "../../utils/salaryUtils";
 
 const useShopId = () => {
@@ -468,24 +468,8 @@ export const AdminStaffDetail = () => {
 
 export const LiveQR = () => {
   const { shopId, shop, staff } = useAdminSnapshot();
-  const [qrCode, setQrCode] = useState("");
-  const [countdown, setCountdown] = useState(60);
+  const { qrCode, countdown } = useLiveQr(shopId);
   const [attendance, setAttendance] = useState([]);
-
-  useEffect(() => {
-    if (!shopId) return undefined;
-    const rotate = () => {
-      setQrCode(createRotatingQrCode());
-      setCountdown(60);
-    };
-    rotate();
-    const rotationTimer = setInterval(rotate, 60000);
-    const secondTimer = setInterval(() => setCountdown((value) => (value <= 1 ? 60 : value - 1)), 1000);
-    return () => {
-      clearInterval(rotationTimer);
-      clearInterval(secondTimer);
-    };
-  }, [shopId]);
 
   useEffect(() => {
     if (!shopId) return undefined;
