@@ -16,7 +16,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "../Firebase/config";
-import { formatDateKey, minutesBetweenTimestamps, minutesFromTime } from "../utils/dateUtils";
+import { formatDateKey, getAttendanceDateKey, minutesBetweenTimestamps, minutesFromTime } from "../utils/dateUtils";
 import { isValidLocation, normalizeLocation } from "../utils/locationUtils";
 import { calculateSalary } from "../utils/salaryUtils";
 
@@ -123,9 +123,15 @@ export const getTodayAttendance = async (shopId, staffId, dateKey = formatDateKe
   return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
 };
 
+export const getCurrentAttendance = async (shopId, staffId, shop, date = new Date()) => {
+  const dateKey = getAttendanceDateKey(shop, date);
+  return getTodayAttendance(shopId, staffId, dateKey);
+};
+
 export const punchIn = async ({ userProfile, shop, location }) => {
-  const date = formatDateKey();
-  const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+  const now = new Date();
+  const date = getAttendanceDateKey(shop, now);
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
   const lateAfter = minutesFromTime(shop.openingTime || "10:00") + Number(shop.graceMinutes || 0);
   const isLate = nowMinutes > lateAfter;
   const attendanceRef = getAttendanceRef(userProfile.shopId, date, userProfile.uid);
@@ -151,8 +157,8 @@ export const punchIn = async ({ userProfile, shop, location }) => {
   });
 };
 
-export const punchOut = async ({ userProfile, shop, location }) => {
-  const date = formatDateKey();
+export const punchOut = async ({ userProfile, shop, location, attendanceDate }) => {
+  const date = attendanceDate || getAttendanceDateKey(shop);
   const attendanceRef = getAttendanceRef(userProfile.shopId, date, userProfile.uid);
   await runTransaction(db, async (transaction) => {
     const snapshot = await transaction.get(attendanceRef);

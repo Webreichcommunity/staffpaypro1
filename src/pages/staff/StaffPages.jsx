@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { jsPDF } from "jspdf";
 import { collection, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight, Banknote, Building2, CalendarCheck, CheckCircle2, Clock3, Download, Loader2, MapPin, QrCode, RotateCcw, ScanLine, ShieldCheck, UserCircle } from "lucide-react";
 import { db } from "../../Firebase/config";
 import { AttendanceStatusBadge } from "../../components/attendance/AttendanceStatusBadge";
@@ -15,13 +15,13 @@ import { SalarySlipTemplate } from "../../components/salary/SalarySlipTemplate";
 import { useAuth } from "../../hooks/useAuth";
 import {
   applyLeave,
+  getCurrentAttendance,
   getAttendanceRef,
   getShop,
-  getTodayAttendance,
   punchIn,
   punchOut,
 } from "../../services/firestoreService";
-import { formatDateKey, formatMonthKey, getMonthDateKeys, toTimeLabel } from "../../utils/dateUtils";
+import { formatDateKey, formatMonthKey, getAttendanceDateKey, getMonthDateKeys, toTimeLabel } from "../../utils/dateUtils";
 import { evaluateLocationAccess, getBrowserLocation, isValidLocation } from "../../utils/locationUtils";
 import { money } from "../../utils/salaryUtils";
 import { AboutWebReich } from "../../components/common/Brand";
@@ -125,11 +125,11 @@ export const StaffDashboard = () => {
   const [today, setToday] = useState(null);
 
   useEffect(() => {
-    if (!userProfile?.shopId || !userProfile?.uid) return undefined;
-    return onSnapshot(getAttendanceRef(userProfile.shopId, formatDateKey(), userProfile.uid), (snapshot) => {
+    if (!userProfile?.shopId || !userProfile?.uid || !shop) return undefined;
+    return onSnapshot(getAttendanceRef(userProfile.shopId, getAttendanceDateKey(shop), userProfile.uid), (snapshot) => {
       setToday(snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null);
     });
-  }, [userProfile?.shopId, userProfile?.uid]);
+  }, [shop, userProfile?.shopId, userProfile?.uid]);
 
   const latestSlip = [...reports].sort((a, b) => String(b.month).localeCompare(String(a.month)))[0];
 
@@ -231,8 +231,13 @@ export const StaffPunch = () => {
 export const StaffScanAttendance = () => {
   const { userProfile } = useAuth();
   const { shop } = useStaffData();
-  const [qrCode, setQrCode] = useState(new URLSearchParams(window.location.search).get("qr") || "");
-  const [shopId, setShopId] = useState(new URLSearchParams(window.location.search).get("shopId") || userProfile?.shopId || "");
+  const routeLocation = useLocation();
+  const navigate = useNavigate();
+  const routeParams = useMemo(() => new URLSearchParams(routeLocation.search), [routeLocation.search]);
+  const routeQrCode = routeParams.get("qr") || "";
+  const routeShopId = routeParams.get("shopId") || "";
+  const [qrCode, setQrCode] = useState("");
+  const [shopId, setShopId] = useState(userProfile?.shopId || "");
   const [attendance, setAttendance] = useState(null);
   const [location, setLocation] = useState(null);
   const [locationCheck, setLocationCheck] = useState(null);
@@ -240,8 +245,10 @@ export const StaffScanAttendance = () => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const activeQrCode = routeQrCode || qrCode;
+  const activeShopId = routeShopId || shopId || userProfile?.shopId || "";
 
-  const preparePunch = useCallback(async (nextQrCode = qrCode, nextShopId = shopId) => {
+  const preparePunch = useCallback(async (nextQrCode = activeQrCode, nextShopId = activeShopId) => {
     setError("");
     setMessage("");
     setVerifying(true);
@@ -262,20 +269,20 @@ export const StaffScanAttendance = () => {
         );
       }
       setLocation(currentLocation);
-      setAttendance(await getTodayAttendance(userProfile.shopId, userProfile.uid));
+      setAttendance(await getCurrentAttendance(userProfile.shopId, userProfile.uid, shop));
       setMessage("QR and location verified. You can mark attendance now.");
     } catch (err) {
       setError(err.message);
     } finally {
       setVerifying(false);
     }
-  }, [qrCode, shop, shopId, userProfile]);
+  }, [activeQrCode, activeShopId, shop, userProfile]);
 
   useEffect(() => {
-    if (!shop || !qrCode || !shopId) return undefined;
-    const timer = window.setTimeout(() => preparePunch(qrCode, shopId), 0);
+    if (!shop || !activeQrCode || !activeShopId) return undefined;
+    const timer = window.setTimeout(() => preparePunch(activeQrCode, activeShopId), 0);
     return () => window.clearTimeout(timer);
-  }, [preparePunch, qrCode, shop, shopId]);
+  }, [activeQrCode, activeShopId, preparePunch, shop]);
 
   const state = useMemo(() => {
     if (!attendance?.punchInTime) return { action: "in", title: "Ready to Punch In", description: "Your QR and shop location are verified." };
@@ -306,10 +313,10 @@ export const StaffScanAttendance = () => {
         await punchIn({ userProfile, shop, location });
         setMessage("Punch In successful");
       } else {
-        await punchOut({ userProfile, shop, location });
+        await punchOut({ userProfile, shop, location, attendanceDate: attendance?.date });
         setMessage("Punch Out successful");
       }
-      setAttendance(await getTodayAttendance(userProfile.shopId, userProfile.uid));
+      setAttendance(await getCurrentAttendance(userProfile.shopId, userProfile.uid, shop));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -325,9 +332,9 @@ export const StaffScanAttendance = () => {
           <ShieldCheck className="h-4 w-4" /> Secure verification
         </div>
       </section>
-      {!qrCode && <QRScanner onResult={handleScanResult} />}
-      {!qrCode && <LocationPermissionBox compact />}
-      {qrCode && !shop && (
+      {!activeQrCode && <QRScanner onResult={handleScanResult} />}
+      {!activeQrCode && <LocationPermissionBox compact />}
+      {activeQrCode && !shop && (
         <Card className="text-center">
           <Loader2 className="mx-auto h-7 w-7 animate-spin text-orange-600" />
           <p className="mt-3 font-bold text-gray-950">Loading shop attendance...</p>
@@ -346,12 +353,12 @@ export const StaffScanAttendance = () => {
       {error && (
         <div className="grid gap-3">
           <Alert tone="danger">{error}</Alert>
-          {qrCode && (
-            <Button onClick={() => preparePunch(qrCode, shopId)}>
+          {activeQrCode && (
+            <Button onClick={() => preparePunch(activeQrCode, activeShopId)}>
               <RotateCcw className="h-4 w-4" /> Retry Location Check
             </Button>
           )}
-          <Button tone="light" onClick={() => { setQrCode(""); setShopId(userProfile?.shopId || ""); setError(""); setMessage(""); }}>
+          <Button tone="light" onClick={() => { navigate("/staff/scan-attendance", { replace: true }); setQrCode(""); setShopId(userProfile?.shopId || ""); setAttendance(null); setLocation(null); setLocationCheck(null); setError(""); setMessage(""); }}>
             <RotateCcw className="h-4 w-4" /> Scan Another QR
           </Button>
         </div>

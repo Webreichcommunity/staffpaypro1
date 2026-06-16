@@ -10,6 +10,14 @@ export const formatMonthKey = (date = new Date()) => {
   return `${value.getFullYear()}-${pad(value.getMonth() + 1)}`;
 };
 
+export const addDays = (date = new Date(), days = 0) => {
+  const value = date instanceof Date ? new Date(date) : new Date(date);
+  value.setDate(value.getDate() + days);
+  return value;
+};
+
+export const getPreviousDateKey = (date = new Date()) => formatDateKey(addDays(date, -1));
+
 export const monthDays = (monthKey) => {
   const [year, month] = monthKey.split("-").map(Number);
   return new Date(year, month, 0).getDate();
@@ -42,6 +50,19 @@ export const toDateLabel = (value) => {
 export const minutesFromTime = (time = "10:00") => {
   const [hours = 0, minutes = 0] = time.split(":").map(Number);
   return hours * 60 + minutes;
+};
+
+export const getAttendanceDateKey = (shop = {}, date = new Date()) => {
+  const value = date instanceof Date ? date : new Date(date);
+  const openingMinutes = minutesFromTime(shop?.openingTime || "10:00");
+  const closingMinutes = minutesFromTime(shop?.closingTime || "20:00");
+  const currentMinutes = value.getHours() * 60 + value.getMinutes();
+
+  if (closingMinutes <= openingMinutes && currentMinutes <= closingMinutes) {
+    return getPreviousDateKey(value);
+  }
+
+  return formatDateKey(value);
 };
 
 export const minutesBetweenTimestamps = (start, end) => {
