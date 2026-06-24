@@ -16,6 +16,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "../Firebase/config";
+import { calculatePunchOutOutcome } from "../utils/attendanceUtils";
 import { formatDateKey, getAttendanceDateKey, minutesBetweenTimestamps, minutesFromTime } from "../utils/dateUtils";
 import { isValidLocation, normalizeLocation } from "../utils/locationUtils";
 import { calculateSalary } from "../utils/salaryUtils";
@@ -166,14 +167,14 @@ export const punchOut = async ({ userProfile, shop, location, attendanceDate }) 
     if (!existing?.punchInTime) throw new Error("Punch in before punching out.");
     if (existing?.punchOutTime) throw new Error("Attendance already completed for today.");
     const totalMinutes = minutesBetweenTimestamps(existing.punchInTime, new Date());
-    const totalWorkingHours = Number((totalMinutes / 60).toFixed(2));
-    const dayStatus = totalWorkingHours >= Number(shop.fullDayHours || 8) ? "full-day" : "half-day";
+    const outcome = calculatePunchOutOutcome({ totalMinutes, shop, isLate: existing.isLate });
     transaction.update(attendanceRef, {
       punchOutTime: serverTimestamp(),
       punchOutLocation: location,
-      totalWorkingHours,
-      dayStatus,
-      status: dayStatus === "half-day" ? "half-day" : existing.isLate ? "late" : "present",
+      totalWorkingHours: outcome.totalWorkingHours,
+      dayStatus: outcome.dayStatus,
+      status: outcome.status,
+      metConfiguredFullDayHours: outcome.metConfiguredFullDayHours,
       updatedAt: serverTimestamp(),
     });
   });

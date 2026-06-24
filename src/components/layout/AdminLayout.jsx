@@ -39,7 +39,7 @@ const adminLinks = [
 const Sidebar = ({ onClose }) => {
   const { logout, userProfile } = useAuth();
   return (
-    <aside className="flex h-full w-64 flex-col border-r border-gray-200 bg-white text-gray-900">
+    <aside className="flex h-full w-64 max-w-[85vw] flex-col border-r border-gray-200 bg-white text-gray-900">
       <div className="flex items-center justify-between border-b border-gray-200 px-4 py-4">
         <Link to="/admin/dashboard" onClick={onClose} className="flex items-center gap-3">
           <BrandMark compact />
@@ -55,13 +55,13 @@ const Sidebar = ({ onClose }) => {
             to={path}
             onClick={onClose}
             className={({ isActive }) =>
-              `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${
+              `flex min-w-0 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${
                 isActive ? "bg-orange-50 text-orange-700" : "text-gray-600 hover:bg-gray-50 hover:text-gray-950"
               }`
             }
           >
-            <Icon className="h-4 w-4" />
-            {label}
+            <Icon className="h-4 w-4 shrink-0" />
+            <span className="truncate">{label}</span>
           </NavLink>
         ))}
       </nav>
@@ -86,7 +86,7 @@ export const AdminLayout = () => {
   const current = adminLinks.find((link) => location.pathname.startsWith(link.path));
 
   return (
-    <div className="min-h-screen bg-stone-50 text-gray-900">
+    <div className="min-h-screen overflow-x-hidden bg-stone-50 text-gray-900">
       <div className="fixed inset-y-0 left-0 z-30 hidden lg:block">
         <Sidebar />
       </div>
@@ -98,19 +98,19 @@ export const AdminLayout = () => {
           </div>
         </div>
       )}
-      <main className="min-w-0 lg:pl-64">
+      <main className="w-full min-w-0 lg:pl-64">
         <header className="sticky top-0 z-20 border-b border-gray-200 bg-white px-3 py-2.5 lg:px-6">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               <IconButton label="Open menu" className="lg:hidden" onClick={() => setOpen(true)}>
                 <Menu className="h-5 w-5" />
               </IconButton>
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-wide text-orange-600">StaffPay Pro</p>
                 <h1 className="truncate text-xl font-bold text-gray-950">{current?.label || "Admin"}</h1>
               </div>
             </div>
-            <Link to="/admin/profile" className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5">
+            <Link to="/admin/profile" className="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5">
               <div className="grid h-8 w-8 place-items-center rounded-lg bg-orange-50 text-orange-700">
                 <UserCircle className="h-5 w-5" />
               </div>
@@ -121,7 +121,7 @@ export const AdminLayout = () => {
             </Link>
           </div>
         </header>
-        <div className="mx-auto min-w-0 w-full max-w-[1600px] p-3 sm:p-5 lg:p-6">
+        <div className="mx-auto w-full min-w-0 max-w-[1600px] p-3 sm:p-5 lg:p-6">
           <Outlet />
         </div>
       </main>

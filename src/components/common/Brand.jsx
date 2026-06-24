@@ -1,13 +1,6 @@
 import { Globe2, Mail, MapPin, Phone, Sparkles } from "lucide-react";
 import { Card } from "./UI";
-
-const WEBREICH = {
-  name: "StaffPay Pro by WebReich",
-  email: "webreichcommunity@gmail.com",
-  phone: "Contact via website",
-  address: "Akola, Maharashtra 444401",
-  website: "https://www.webreich.in/",
-};
+import { WEBREICH } from "../../utils/brandInfo";
 
 export const BrandMark = ({ compact = false, dark = false }) => (
   <div className="flex items-center gap-3">

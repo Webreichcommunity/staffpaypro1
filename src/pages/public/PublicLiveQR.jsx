@@ -86,7 +86,7 @@ export const PublicLiveQR = () => {
               </div>
             </Card>
 
-            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            <div className="grid gap-2 sm:grid-cols-3 sm:gap-3">
               {[
                 { icon: Smartphone, title: "Open StaffPay Pro", text: "Login with your active staff account." },
                 { icon: ScanLine, title: "Scan this QR", text: "Use the Scan QR button from the staff app." },

@@ -88,12 +88,12 @@ const useAdminSnapshot = () => {
 };
 
 const PageHeader = ({ title, subtitle, action }) => (
-  <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+  <div className="mb-4 flex min-w-0 flex-col justify-between gap-3 sm:flex-row sm:items-center">
     <div className="min-w-0">
-      <h2 className="text-xl font-bold text-gray-950 sm:text-2xl">{title}</h2>
-      {subtitle && <p className="mt-0.5 max-w-3xl text-sm font-medium leading-5 text-gray-600">{subtitle}</p>}
+      <h2 className="break-words text-xl font-bold text-gray-950 sm:text-2xl">{title}</h2>
+      {subtitle && <p className="mt-0.5 max-w-3xl break-words text-sm font-medium leading-5 text-gray-600">{subtitle}</p>}
     </div>
-    {action && <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">{action}</div>}
+    {action && <div className="flex w-full min-w-0 flex-wrap gap-2 sm:w-auto sm:justify-end">{action}</div>}
   </div>
 );
 
@@ -413,10 +413,10 @@ export const AdminStaffDetail = () => {
         title={staff.name}
         subtitle={`${staff.designation || "Staff"} - ${staff.email}`}
         action={
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={() => setAdvanceModal({})}><HandCoins className="h-4 w-4" /> Record Advance</Button>
-            <Button tone="light" onClick={() => setEditingProfile((value) => !value)}><Pencil className="h-4 w-4" /> {editingProfile ? "Close Edit" : "Edit Profile"}</Button>
-            <Button tone="danger" onClick={async () => {
+          <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-3">
+            <Button className="w-full" onClick={() => setAdvanceModal({})}><HandCoins className="h-4 w-4" /> Record Advance</Button>
+            <Button className="w-full" tone="light" onClick={() => setEditingProfile((value) => !value)}><Pencil className="h-4 w-4" /> {editingProfile ? "Close Edit" : "Edit Profile"}</Button>
+            <Button className="w-full" tone="danger" onClick={async () => {
               if (!window.confirm(`Delete ${staff.name}? Historical attendance and salary reports will remain.`)) return;
               await deleteStaff(staff.uid);
               navigate("/admin/staff");
@@ -424,36 +424,39 @@ export const AdminStaffDetail = () => {
           </div>
         }
       />
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Present" value={attendance.filter((item) => item.status === "present").length} />
         <StatCard label="Late" value={attendance.filter((item) => item.status === "late").length} />
         <StatCard label="Half Days" value={attendance.filter((item) => item.dayStatus === "half-day").length} />
         <StatCard label="Salary" value={money(staff.monthlySalary)} />
       </div>
       <Card>
-        <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
           {[["Phone", staff.phone], ["Address", staff.address], ["Joining Date", staff.joiningDate], ["Department", staff.department], ["Bank", staff.bankDetails?.bankName], ["Account", staff.bankDetails?.accountNumber], ["IFSC", staff.bankDetails?.ifsc], ["UPI", staff.bankDetails?.upiId]].map(([label, value]) => (
-            <div key={label}><p className="text-xs font-bold uppercase tracking-wide text-gray-400">{label}</p><p className="mt-1 font-semibold text-gray-800">{value || "--"}</p></div>
+            <div key={label} className="min-w-0 rounded-lg bg-gray-50 p-3">
+              <p className="text-xs font-bold uppercase tracking-wide text-gray-400">{label}</p>
+              <p className="mt-1 break-words font-semibold text-gray-800">{value || "--"}</p>
+            </div>
           ))}
         </div>
       </Card>
       {editingProfile && <StaffForm editing values={values} loading={loading} onChange={(key, value) => setStaff((current) => ({ ...current, [key]: value }))} onSubmit={submit} />}
       <Card>
-        <div className="mb-4 flex items-center justify-between"><h3 className="font-bold text-gray-950">Advance Payments</h3><Badge>{staffAdvances.length} records</Badge></div>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><h3 className="font-bold text-gray-950">Advance Payments</h3><Badge>{staffAdvances.length} records</Badge></div>
         <Table columns={[
           { key: "advanceDate", label: "Paid On" },
           { key: "amount", label: "Amount", render: (row) => money(row.amount) },
           { key: "deductionMonth", label: "Deduct Month" },
           { key: "deductionStatus", label: "Salary Deduction", render: (row) => reports.some((report) => report.staffId === staff.uid && report.month === row.deductionMonth && report.advanceIds?.includes(row.id)) ? <Badge tone="paid">Included in report</Badge> : <Badge tone="pending">Pending</Badge> },
           { key: "notes", label: "Note", render: (row) => row.notes || "--" },
-          { key: "actions", label: "Actions", render: (row) => <div className="flex gap-2"><Button tone="light" onClick={() => setAdvanceModal(row)}>Edit</Button><Button tone="danger" onClick={() => window.confirm("Delete this advance record?") && deleteAdvance(row.id)}>Delete</Button></div> },
+          { key: "actions", label: "Actions", render: (row) => <div className="flex flex-wrap gap-2"><Button tone="light" onClick={() => setAdvanceModal(row)}>Edit</Button><Button tone="danger" onClick={() => window.confirm("Delete this advance record?") && deleteAdvance(row.id)}>Delete</Button></div> },
         ]} rows={staffAdvances} />
       </Card>
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card><h3 className="mb-4 font-bold text-gray-950">Salary History</h3><Table columns={[
+      <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+        <Card className="min-w-0"><h3 className="mb-4 font-bold text-gray-950">Salary History</h3><Table columns={[
           { key: "month", label: "Month" }, { key: "netSalary", label: "Net Salary", render: (row) => money(row.netSalary) }, { key: "paymentStatus", label: "Status", render: (row) => <Badge tone={row.paymentStatus}>{row.paymentStatus}</Badge> },
         ]} rows={staffReports} /></Card>
-        <Card><h3 className="mb-4 font-bold text-gray-950">Payment History</h3><Table columns={[
+        <Card className="min-w-0"><h3 className="mb-4 font-bold text-gray-950">Payment History</h3><Table columns={[
           { key: "paymentDate", label: "Date" }, { key: "amountPaid", label: "Amount", render: (row) => money(row.amountPaid) }, { key: "paymentMode", label: "Mode" },
         ]} rows={staffPayments} /></Card>
       </div>
@@ -483,7 +486,7 @@ export const LiveQR = () => {
       <PageHeader
         title="Live QR Attendance"
         subtitle="Display this screen at the shop. The QR changes visually every 60 seconds; attendance is secured by staff login and shop location."
-        action={<a href={`/?shopId=${shopId}`} target="_blank" rel="noreferrer"><Button tone="dark"><QrCode className="h-4 w-4" /> Open Public Display</Button></a>}
+        action={<a href={`/live-qr?shopId=${shopId}`} target="_blank" rel="noreferrer"><Button tone="dark"><QrCode className="h-4 w-4" /> Open Public Display</Button></a>}
       />
       <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
         <QRDisplay value={qrUrl} countdown={countdown} shopName={shop?.shopName} />

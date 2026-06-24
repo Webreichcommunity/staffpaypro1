@@ -25,7 +25,7 @@ export const StaffLayout = () => {
   }, [userProfile?.shopId]);
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20 text-gray-900">
+    <div className="min-h-screen overflow-x-hidden bg-gray-50 pb-20 text-gray-900">
       <header className="sticky top-0 z-20 border-b border-gray-200 bg-white px-3 py-2.5">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -36,15 +36,15 @@ export const StaffLayout = () => {
               <p className="flex items-center gap-1 truncate text-sm font-black text-gray-950"><Building2 className="h-3.5 w-3.5 text-orange-600" /> {shop?.shopName || "Your shop"}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <NavLink to="/staff/scan-attendance" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-orange-600 px-3 text-sm font-semibold text-white shadow-sm">
-              <ScanLine className="h-4 w-4" /> <span className="hidden xs:inline sm:inline">Scan QR</span><span className="sm:hidden">Scan</span>
+              <ScanLine className="h-4 w-4" /> <span className="hidden sm:inline">Scan QR</span><span className="sm:hidden">Scan</span>
             </NavLink>
             <Button tone="light" className="px-2.5" onClick={logout}><LogOut className="h-4 w-4" /></Button>
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl p-3 sm:p-5">
+      <main className="mx-auto w-full min-w-0 max-w-6xl p-3 sm:p-5">
         <Outlet />
       </main>
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-gray-200 bg-white px-1.5 py-1.5 shadow-lg">
@@ -53,14 +53,14 @@ export const StaffLayout = () => {
             <NavLink
               key={path}
               to={path}
-              className={({ isActive }) =>
-                `grid min-h-12 place-items-center rounded-lg text-[10px] font-semibold transition ${
+            className={({ isActive }) =>
+                `grid min-h-12 min-w-0 place-items-center rounded-lg px-0.5 text-[10px] font-semibold transition ${
                   isActive ? "bg-orange-50 text-orange-700" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                 }`
               }
             >
               <Icon className="h-5 w-5" />
-              <span>{label}</span>
+              <span className="max-w-full truncate">{label}</span>
             </NavLink>
           ))}
         </div>

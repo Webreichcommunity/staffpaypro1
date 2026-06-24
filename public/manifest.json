@@ -1,7 +1,7 @@
 {
   "name": "StaffPay Pro",
   "short_name": "StaffPay",
-  "description": "Staff attendance, payroll, leave management, payments, and salary slips.",
+  "description": "StaffPay Pro by WebReich for QR attendance, payroll, leave management, payments, advances, and salary slips.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

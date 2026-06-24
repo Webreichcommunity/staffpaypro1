@@ -211,7 +211,7 @@ export const StaffPunch = () => {
         </Link>
       </Card>
       <LocationPermissionBox />
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid gap-2 sm:grid-cols-3">
         {[
           [QrCode, "1. Scan QR", "Scan the live code shown at the shop."],
           [MapPin, "2. Verify location", "Confirm you are inside the allowed radius."],
@@ -260,6 +260,12 @@ export const StaffScanAttendance = () => {
       if (nextShopId !== userProfile.shopId) throw new Error("QR belongs to a different shop.");
       if (!isValidLocation(shop?.location)) throw new Error("No valid shop location is set. Please ask admin to capture and save the shop location.");
       if (userProfile.isActive === false) throw new Error("Your staff account is inactive.");
+      const currentAttendance = await getCurrentAttendance(userProfile.shopId, userProfile.uid, shop);
+      if (currentAttendance?.punchOutTime) {
+        setAttendance(currentAttendance);
+        setMessage("Attendance already completed for today. Punch In will be available on the next attendance day.");
+        return;
+      }
       const currentLocation = await getBrowserLocation();
       const check = evaluateLocationAccess(currentLocation, shop.location, shop.attendanceRadiusMeters);
       setLocationCheck(check);
@@ -269,7 +275,7 @@ export const StaffScanAttendance = () => {
         );
       }
       setLocation(currentLocation);
-      setAttendance(await getCurrentAttendance(userProfile.shopId, userProfile.uid, shop));
+      setAttendance(currentAttendance);
       setMessage("QR and location verified. You can mark attendance now.");
     } catch (err) {
       setError(err.message);
@@ -310,9 +316,12 @@ export const StaffScanAttendance = () => {
     setError("");
     try {
       if (type === "in") {
+        if (attendance?.punchInTime) throw new Error("You already punched in today. Please punch out when your shift is complete.");
         await punchIn({ userProfile, shop, location });
         setMessage("Punch In successful");
       } else {
+        if (!attendance?.punchInTime) throw new Error("Punch in before punching out.");
+        if (attendance?.punchOutTime) throw new Error("Attendance already completed for today.");
         await punchOut({ userProfile, shop, location, attendanceDate: attendance?.date });
         setMessage("Punch Out successful");
       }
@@ -363,7 +372,7 @@ export const StaffScanAttendance = () => {
           </Button>
         </div>
       )}
-      {!verifying && location && (
+      {!verifying && (location || state.action === "done") && (
         <PunchCard
           state={state}
           shopName={shop?.shopName}

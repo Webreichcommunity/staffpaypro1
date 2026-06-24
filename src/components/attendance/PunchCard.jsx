@@ -19,9 +19,9 @@ export const PunchCard = ({ state, shopName, distance, accuracy, radius, onPunch
     <div className="p-4">
       <div className="grid grid-cols-3 gap-2">
         {[
-          [MapPin, `${distance}m`, "From shop"],
-          [LocateFixed, `${accuracy}m`, "GPS accuracy"],
-          [ShieldCheck, `${radius}m`, "Allowed radius"],
+          [MapPin, Number.isFinite(Number(distance)) ? `${distance}m` : "--", "From shop"],
+          [LocateFixed, Number.isFinite(Number(accuracy)) ? `${accuracy}m` : "--", "GPS accuracy"],
+          [ShieldCheck, Number.isFinite(Number(radius)) ? `${radius}m` : "--", "Allowed radius"],
         ].map(([Icon, value, label]) => (
           <div key={label} className="rounded-lg bg-gray-50 p-2 text-center ring-1 ring-gray-100">
             <Icon className="mx-auto h-4 w-4 text-orange-600" />

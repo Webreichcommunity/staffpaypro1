@@ -6,19 +6,19 @@ export const SalarySlipTemplate = ({ report, shop, staff }) => (
       <p className="text-lg font-bold text-gray-950">{shop?.shopName || "StaffPay Pro"}</p>
       <p className="text-xs font-medium text-gray-600">{shop?.address || "Salary Slip"}</p>
     </div>
-    <div className="grid grid-cols-2 gap-3 border-b border-gray-100 p-3.5 sm:p-4">
+    <div className="grid gap-3 border-b border-gray-100 p-3.5 sm:grid-cols-2 sm:p-4">
       <div>
         <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">Staff</p>
         <p className="break-words text-sm font-bold">{staff?.name || report?.staffName}</p>
         <p className="break-words text-xs text-gray-600">{staff?.designation || report?.designation}</p>
       </div>
-      <div className="text-right">
+      <div className="sm:text-right">
         <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">Month</p>
         <p className="text-sm font-bold">{report?.month}</p>
         <p className="text-xs capitalize text-gray-600">Payment: {report?.paymentStatus}</p>
       </div>
     </div>
-    <div className="grid grid-cols-2 gap-x-4 gap-y-2 p-3.5 text-xs sm:p-4">
+    <div className="grid gap-x-4 gap-y-2 p-3.5 text-xs sm:grid-cols-2 sm:p-4">
       {[
             ["Basic salary", money(report?.monthlySalary)],
             ["Working days", report?.workingDays],
@@ -39,12 +39,12 @@ export const SalarySlipTemplate = ({ report, shop, staff }) => (
         </div>
       ))}
     </div>
-    <div className="flex items-center justify-between gap-3 border-t border-orange-100 bg-orange-50 p-3.5 sm:p-4">
-      <div>
+    <div className="flex flex-col gap-3 border-t border-orange-100 bg-orange-50 p-3.5 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+      <div className="min-w-0">
         <p className="text-xs font-semibold text-gray-600">Net payable salary</p>
-        {report?.note && <p className="mt-0.5 max-w-48 break-words text-xs text-gray-600">{report.note}</p>}
+        {report?.note && <p className="mt-0.5 max-w-full break-words text-xs text-gray-600 sm:max-w-48">{report.note}</p>}
       </div>
-      <p className="text-xl font-bold text-orange-700">{money(report?.netSalary)}</p>
+      <p className="break-words text-xl font-bold text-orange-700">{money(report?.netSalary)}</p>
     </div>
   </div>
 );

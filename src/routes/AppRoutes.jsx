@@ -30,10 +30,11 @@ import {
 } from "../pages/staff/StaffPages";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { PublicLiveQR } from "../pages/public/PublicLiveQR";
+import { HomePage } from "../pages/public/HomePage";
 
 export const AppRoutes = () => (
   <Routes>
-    <Route path="/" element={<PublicLiveQR />} />
+    <Route path="/" element={<HomePage />} />
     <Route path="/live-qr" element={<PublicLiveQR />} />
     <Route path="/login" element={<Login />} />
     <Route path="/create-admin" element={<CreateAdmin />} />

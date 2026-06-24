@@ -61,9 +61,9 @@ export const Login = () => {
             <p className="mt-5 text-lg leading-8 text-gray-600">
               A polished SaaS dashboard for shop owners to run QR attendance, salary slips, leave approvals, and staff payments from one secure Firebase app.
             </p>
-            <div className="mt-8 grid grid-cols-3 gap-3">
+            <div className="mt-8 grid gap-3 sm:grid-cols-3">
               {["Live QR", "GPS Radius", "Salary PDF"].map((item) => (
-                <div key={item} className="rounded-2xl bg-white/80 p-4 text-sm font-bold text-gray-800 shadow-soft">
+                <div key={item} className="rounded-lg bg-white/80 p-4 text-sm font-bold text-gray-800 shadow-soft">
                   {item}
                 </div>
               ))}
