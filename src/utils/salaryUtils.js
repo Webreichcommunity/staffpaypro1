@@ -1,14 +1,13 @@
-import { countWorkingDays } from "./dateUtils.js";
+import { monthDays } from "./dateUtils.js";
 
-const countLeaveDays = (leaves, month, weeklyOffDay) =>
+const countLeaveDays = (leaves, month) =>
   leaves.reduce((total, leave) => {
     const start = new Date(`${leave.fromDate}T00:00:00`);
     const end = new Date(`${leave.toDate || leave.fromDate}T00:00:00`);
     let count = 0;
     for (const date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
       const dateMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-      const isWeeklyOff = date.toLocaleDateString("en-US", { weekday: "long" }).toLowerCase() === String(weeklyOffDay || "").toLowerCase();
-      if (dateMonth === month && !isWeeklyOff) count += 1;
+      if (dateMonth === month) count += 1;
     }
     return total + count;
   }, 0);
@@ -26,22 +25,25 @@ export const calculateSalary = ({
   note = "",
 }) => {
   const monthlySalary = Number(staff?.monthlySalary || 0);
-  const workingDays = countWorkingDays(month, shop?.weeklyOffDay || "Sunday") || 1;
-  const configuredPaidOffDays = Number(shop?.monthlyPaidOffDays ?? 4);
-  const monthlyPaidOffDays = Number.isFinite(configuredPaidOffDays) ? Math.max(0, configuredPaidOffDays) : 4;
-  const presentDays = attendanceRecords.filter((record) => record.status === "present" || record.dayStatus === "full-day").length;
+  const calendarDays = monthDays(month) || 1;
+  const configuredExtraDays = Number(shop?.monthlyExtraPaidDays ?? shop?.monthlyPaidOffDays ?? 4);
+  const monthlyExtraPaidDays = Number.isFinite(configuredExtraDays) ? Math.max(0, configuredExtraDays) : 4;
+  const isHalfDay = (record) => record.dayStatus === "half-day" || record.status === "half-day";
+  const isAbsent = (record) => record.status === "absent" || record.dayStatus === "absent";
+  const presentDays = attendanceRecords.filter((record) => !isHalfDay(record) && !isAbsent(record) && (["present", "late"].includes(record.status) || record.dayStatus === "full-day")).length;
   const lateDays = attendanceRecords.filter((record) => record.isLate || record.status === "late").length;
-  const halfDays = attendanceRecords.filter((record) => record.dayStatus === "half-day" || record.status === "half-day").length;
-  const absentDays = attendanceRecords.filter((record) => record.status === "absent" || record.dayStatus === "absent").length;
-  const paidLeaves = countLeaveDays(approvedLeaves.filter((leave) => leave.leaveType?.toLowerCase().includes("paid") && !leave.leaveType?.toLowerCase().includes("unpaid")), month, shop?.weeklyOffDay);
-  const unpaidLeaves = countLeaveDays(approvedLeaves.filter((leave) => leave.leaveType?.toLowerCase().includes("unpaid")), month, shop?.weeklyOffDay);
-  const perDaySalary = monthlySalary / workingDays;
-  const unpaidAbsenceDaysBeforeAllowance = Math.max(0, workingDays - presentDays - paidLeaves - unpaidLeaves - halfDays);
-  const paidOffDaysUsed = Math.min(monthlyPaidOffDays, unpaidAbsenceDaysBeforeAllowance);
-  const salaryDeductedAbsentDays = Math.max(0, unpaidAbsenceDaysBeforeAllowance - paidOffDaysUsed);
-  const payableDays = Math.min(workingDays, presentDays + paidLeaves + paidOffDaysUsed + halfDays * 0.5);
-  const attendanceSalary = payableDays * perDaySalary;
-  const absentDeduction = Math.max(0, monthlySalary - attendanceSalary);
+  const halfDays = attendanceRecords.filter(isHalfDay).length;
+  const absentDays = attendanceRecords.filter((record) => !isHalfDay(record) && isAbsent(record)).length;
+  const paidLeaves = countLeaveDays(approvedLeaves.filter((leave) => leave.leaveType?.toLowerCase().includes("paid") && !leave.leaveType?.toLowerCase().includes("unpaid")), month);
+  const unpaidLeaves = countLeaveDays(approvedLeaves.filter((leave) => leave.leaveType?.toLowerCase().includes("unpaid")), month);
+  const perDaySalary = monthlySalary / calendarDays;
+  const paidBaseDays = Math.min(calendarDays, presentDays + paidLeaves + halfDays * 0.5);
+  const salaryDeductedAbsentDays = Math.max(0, calendarDays - paidBaseDays);
+  const payableDays = paidBaseDays + monthlyExtraPaidDays;
+  const baseEarnedSalary = paidBaseDays * perDaySalary;
+  const extraSalaryAmount = monthlyExtraPaidDays * perDaySalary;
+  const attendanceSalary = baseEarnedSalary + extraSalaryAmount;
+  const absentDeduction = Math.max(0, monthlySalary - baseEarnedSalary);
   const halfDayDeduction = halfDays * perDaySalary * 0.5;
   const leaveDeduction = unpaidLeaves * perDaySalary;
   const grossSalary = attendanceSalary + Number(bonus) + Number(overtimeAmount);
@@ -50,9 +52,11 @@ export const calculateSalary = ({
 
   return {
     monthlySalary,
-    workingDays,
-    monthlyPaidOffDays,
-    paidOffDaysUsed,
+    calendarDays,
+    workingDays: calendarDays,
+    monthlyExtraPaidDays,
+    extraSalaryAmount,
+    baseEarnedSalary,
     salaryDeductedAbsentDays,
     presentDays,
     absentDays,

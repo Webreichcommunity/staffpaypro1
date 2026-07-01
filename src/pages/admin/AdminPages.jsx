@@ -22,6 +22,7 @@ import { collection, doc, getDoc, onSnapshot, query, where } from "firebase/fire
 import { db } from "../../Firebase/config";
 import { AttendanceStatusBadge } from "../../components/attendance/AttendanceStatusBadge";
 import { QRDisplay } from "../../components/attendance/QRDisplay";
+import { StaffAttendanceCalendar } from "../../components/attendance/StaffAttendanceCalendar";
 import { DateFilter, MonthFilter } from "../../components/common/Filters";
 import { Alert, Badge, Button, Card, EmptyState, Input, Modal, SearchBox, Select, StatCard, Table, Textarea } from "../../components/common/UI";
 import { PaymentModal } from "../../components/salary/PaymentModal";
@@ -46,6 +47,8 @@ import {
   recordPayment,
   saveBulkManualAttendance,
   saveShopSettings,
+  setStaffCalendarAttendance,
+  setStaffMonthAttendance,
   updateAdvance,
   updateLeaveStatus,
   updatePayment,
@@ -166,13 +169,14 @@ const downloadSalaryPdf = ({ report, shop, staff }) => {
     ["Staff", staff?.name || report.staffName],
     ["Designation", staff?.designation || report.designation || "-"],
     ["Monthly Salary", pdfMoney(report.monthlySalary)],
-    ["Working Days", String(report.workingDays || 0)],
+    ["Calendar Days", String(report.calendarDays || report.workingDays || 0)],
     ["Payable Days", String(report.payableDays || 0)],
-    ["Paid Off Days Used", String(report.paidOffDaysUsed || 0)],
+    ["Extra Paid Days", String(report.monthlyExtraPaidDays ?? report.monthlyPaidOffDays ?? 0)],
+    ["Extra Salary", pdfMoney(report.extraSalaryAmount)],
     ["Salary-Deducted Absence Days", String(report.salaryDeductedAbsentDays || 0)],
     ["Present / Absent / Half Days", `${report.presentDays || 0} / ${report.absentDays || 0} / ${report.halfDays || 0}`],
     ["Paid / Unpaid Leaves", `${report.paidLeaves || 0} / ${report.unpaidLeaves || 0}`],
-    ["Attendance Salary", pdfMoney(report.attendanceSalary)],
+    ["Total Earned Salary", pdfMoney(report.attendanceSalary)],
     ["Attendance / Leave Deduction", pdfMoney(report.absentDeduction)],
     ["Bonus", pdfMoney(report.bonus)],
     ["Overtime", pdfMoney(report.overtimeAmount)],
@@ -364,6 +368,9 @@ export const AdminStaffDetail = () => {
   const navigate = useNavigate();
   const [staff, setStaff] = useState(null);
   const [attendance, setAttendance] = useState([]);
+  const [attendanceMonth, setAttendanceMonth] = useState(formatMonthKey());
+  const [calendarBusy, setCalendarBusy] = useState(false);
+  const [calendarError, setCalendarError] = useState("");
   const [loading, setLoading] = useState(false);
   const [editingProfile, setEditingProfile] = useState(false);
   const [advanceModal, setAdvanceModal] = useState(null);
@@ -374,8 +381,8 @@ export const AdminStaffDetail = () => {
 
   useEffect(() => {
     if (!staff?.shopId) return;
-    fetchMonthAttendance(staff.shopId, staff.uid, formatMonthKey()).then(setAttendance);
-  }, [staff?.shopId, staff?.uid]);
+    fetchMonthAttendance(staff.shopId, staff.uid, attendanceMonth).then(setAttendance).catch((error) => setCalendarError(error.message));
+  }, [attendanceMonth, staff?.shopId, staff?.uid]);
 
   if (!staff) return <EmptyState title="Loading staff profile" />;
 
@@ -407,6 +414,48 @@ export const AdminStaffDetail = () => {
   const staffReports = reports.filter((item) => item.staffId === staff.uid).sort((a, b) => String(b.month).localeCompare(String(a.month)));
   const staffPayments = payments.filter((item) => item.staffId === staff.uid).sort((a, b) => String(b.paymentDate).localeCompare(String(a.paymentDate)));
 
+  const refreshAttendance = () => fetchMonthAttendance(staff.shopId, staff.uid, attendanceMonth).then(setAttendance);
+
+  const updateCalendarDay = async (date, status) => {
+    setCalendarBusy(true);
+    setCalendarError("");
+    try {
+      await setStaffCalendarAttendance({
+        shopId: staff.shopId,
+        staffId: staff.uid,
+        date,
+        status,
+        changedBy: currentUser?.uid || "admin",
+      });
+      await refreshAttendance();
+    } catch (error) {
+      setCalendarError(error.message);
+    } finally {
+      setCalendarBusy(false);
+    }
+  };
+
+  const updateCalendarMonth = async (status) => {
+    const action = status ? `mark every day in ${attendanceMonth} as ${status}` : `restore all admin overrides in ${attendanceMonth}`;
+    if (!window.confirm(`Are you sure you want to ${action} for ${staff.name}?`)) return;
+    setCalendarBusy(true);
+    setCalendarError("");
+    try {
+      await setStaffMonthAttendance({
+        shopId: staff.shopId,
+        staffId: staff.uid,
+        dates: getMonthDateKeys(attendanceMonth),
+        status,
+        changedBy: currentUser?.uid || "admin",
+      });
+      await refreshAttendance();
+    } catch (error) {
+      setCalendarError(error.message);
+    } finally {
+      setCalendarBusy(false);
+    }
+  };
+
   return (
     <div className="grid gap-4">
       <PageHeader
@@ -425,10 +474,10 @@ export const AdminStaffDetail = () => {
         }
       />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Present" value={attendance.filter((item) => item.status === "present").length} />
+        <StatCard label="Present" value={attendance.filter((item) => ["present", "late"].includes(item.status) || item.dayStatus === "full-day").length} />
+        <StatCard label="Absent" value={attendance.filter((item) => item.status === "absent" || item.dayStatus === "absent").length} />
         <StatCard label="Late" value={attendance.filter((item) => item.status === "late").length} />
         <StatCard label="Half Days" value={attendance.filter((item) => item.dayStatus === "half-day").length} />
-        <StatCard label="Salary" value={money(staff.monthlySalary)} />
       </div>
       <Card>
         <div className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
@@ -441,6 +490,24 @@ export const AdminStaffDetail = () => {
         </div>
       </Card>
       {editingProfile && <StaffForm editing values={values} loading={loading} onChange={(key, value) => setStaff((current) => ({ ...current, [key]: value }))} onSubmit={submit} />}
+      <Card>
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="font-bold text-gray-950">Monthly Attendance Calendar</h3>
+            <p className="text-sm font-medium text-gray-600">Admin changes are saved to the same attendance records used by staff history, reports, and salary.</p>
+          </div>
+          <Badge>{attendanceMonth}</Badge>
+        </div>
+        <StaffAttendanceCalendar
+          month={attendanceMonth}
+          records={attendance}
+          busy={calendarBusy}
+          error={calendarError}
+          onMonthChange={setAttendanceMonth}
+          onStatusChange={updateCalendarDay}
+          onBulkChange={updateCalendarMonth}
+        />
+      </Card>
       <Card>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><h3 className="font-bold text-gray-950">Advance Payments</h3><Badge>{staffAdvances.length} records</Badge></div>
         <Table columns={[
@@ -521,7 +588,7 @@ export const AdminShopSettings = () => {
     fullDayHours: 8,
     halfDayHours: 4,
     weeklyOffDay: "Sunday",
-    monthlyPaidOffDays: 4,
+    monthlyExtraPaidDays: 4,
     attendanceRadiusMeters: 100,
     location: { lat: 0, lng: 0 },
   });
@@ -569,10 +636,10 @@ export const AdminShopSettings = () => {
               ["graceMinutes", "Grace time in minutes", "number"],
               ["fullDayHours", "Minimum full-day working hours", "number"],
               ["halfDayHours", "Minimum half-day working hours", "number"],
-              ["monthlyPaidOffDays", "Paid absence allowance per month", "number"],
+              ["monthlyExtraPaidDays", "Extra salary days per month", "number"],
               ["attendanceRadiusMeters", "Attendance radius in meters", "number"],
             ].map(([key, label, type]) => (
-              <Input key={key} label={label} type={type} min={key === "monthlyPaidOffDays" ? 0 : undefined} step={key === "monthlyPaidOffDays" ? 1 : undefined} value={values[key] ?? ""} onChange={(event) => update(key, event.target.value)} />
+              <Input key={key} label={label} type={type} min={key === "monthlyExtraPaidDays" ? 0 : undefined} step={key === "monthlyExtraPaidDays" ? 1 : undefined} value={values[key] ?? ""} onChange={(event) => update(key, event.target.value)} />
             ))}
             <Select label="Weekly off day" value={values.weeklyOffDay || "Sunday"} onChange={(event) => update("weeklyOffDay", event.target.value)}>
               <option value="None">None (Every day working)</option>
@@ -585,7 +652,7 @@ export const AdminShopSettings = () => {
             {values.weeklyOffDay === "None"
               ? "No weekly off is selected, so every calendar day is counted as a scheduled working day. "
               : `${values.weeklyOffDay || "Sunday"}s are excluded from scheduled working days. `}
-            The paid absence allowance lets each staff member miss up to {Number(values.monthlyPaidOffDays ?? 4)} additional working days per month before salary deduction begins.
+            Salary uses every calendar day in the selected month. Each staff member receives {Number(values.monthlyExtraPaidDays ?? 4)} extra paid day(s) on top of attendance-earned salary; half-days earn half of the daily rate.
           </Alert>
           {values.location?.accuracy > 0 && (
             <p className="text-sm font-medium text-gray-600">
@@ -865,7 +932,7 @@ export const AdminSalary = () => {
         </div>
       </Card>
       <div className="mb-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={CalendarCheck} label="Monthly Paid Off-Days" value={Number(shop?.monthlyPaidOffDays ?? 4)} helper="Deduction starts after these missed working days" />
+        <StatCard icon={CalendarCheck} label="Extra Salary Days" value={Number(shop?.monthlyExtraPaidDays ?? shop?.monthlyPaidOffDays ?? 4)} helper="Paid in addition to the calendar-month salary" />
         <StatCard icon={HandCoins} label="Advances To Deduct" value={money(selectedAdvanceTotal)} helper={`${selectedAdvances.length} advance record(s) in ${month}`} />
         <StatCard icon={Users} label="Reports Generated" value={visibleReports.length} />
         <StatCard icon={Banknote} label="Net Salary Total" value={money(visibleReports.reduce((sum, report) => sum + Number(report.netSalary || 0), 0))} />
@@ -875,7 +942,8 @@ export const AdminSalary = () => {
           { key: "staffName", label: "Staff" },
           { key: "monthlySalary", label: "Monthly", render: (row) => money(row.monthlySalary) },
           { key: "presentDays", label: "Present" },
-          { key: "paidOffDaysUsed", label: "Paid Off Used", render: (row) => row.paidOffDaysUsed || 0 },
+          { key: "monthlyExtraPaidDays", label: "Extra Days", render: (row) => row.monthlyExtraPaidDays ?? row.monthlyPaidOffDays ?? 0 },
+          { key: "extraSalaryAmount", label: "Extra Salary", render: (row) => money(row.extraSalaryAmount) },
           { key: "salaryDeductedAbsentDays", label: "Deducted Absence", render: (row) => row.salaryDeductedAbsentDays || 0 },
           { key: "halfDays", label: "Half" },
           { key: "advanceDeduction", label: "Advance", render: (row) => money(row.advanceDeduction) },
@@ -1055,7 +1123,8 @@ export const AdminReports = () => {
         <Table columns={[
           { key: "staffName", label: "Staff" },
           { key: "presentDays", label: "Present" },
-          { key: "paidOffDaysUsed", label: "Paid Off Used", render: (row) => row.paidOffDaysUsed || 0 },
+          { key: "monthlyExtraPaidDays", label: "Extra Days", render: (row) => row.monthlyExtraPaidDays ?? row.monthlyPaidOffDays ?? 0 },
+          { key: "extraSalaryAmount", label: "Extra Salary", render: (row) => money(row.extraSalaryAmount) },
           { key: "salaryDeductedAbsentDays", label: "Deducted Absence", render: (row) => row.salaryDeductedAbsentDays || 0 },
           { key: "advanceDeduction", label: "Advance", render: (row) => money(row.advanceDeduction) },
           { key: "netSalary", label: "Net Salary", render: (row) => money(row.netSalary) },

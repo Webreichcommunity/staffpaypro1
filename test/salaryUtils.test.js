@@ -3,80 +3,83 @@ import assert from "node:assert/strict";
 import { calculateSalary } from "../src/utils/salaryUtils.js";
 
 const staff = { monthlySalary: 10000 };
-const shop = { weeklyOffDay: "Sunday", monthlyPaidOffDays: 4 };
-const presentRecords = (count) => Array.from({ length: count }, (_, index) => ({ id: String(index), status: "present" }));
+const shop = { monthlyExtraPaidDays: 4 };
+const records = (count, status = "present") => Array.from({ length: count }, (_, index) => ({
+  id: String(index),
+  status,
+  dayStatus: status === "present" ? "full-day" : status,
+}));
 
-test("June 2026 salary pays present days plus four configured paid off-days", () => {
-  const report = calculateSalary({ staff, shop, month: "2026-06", attendanceRecords: presentRecords(10) });
+test("June 2026 pays the monthly salary plus four extra calendar-day rates", () => {
+  const report = calculateSalary({ staff, shop, month: "2026-06", attendanceRecords: records(30) });
 
-  assert.equal(report.workingDays, 26);
-  assert.equal(report.paidOffDaysUsed, 4);
-  assert.equal(report.salaryDeductedAbsentDays, 12);
-  assert.equal(report.payableDays, 14);
-  assert.equal(Math.round(report.netSalary), 5385);
+  assert.equal(report.calendarDays, 30);
+  assert.equal(report.monthlyExtraPaidDays, 4);
+  assert.equal(Number(report.perDaySalary.toFixed(2)), 333.33);
+  assert.equal(Number(report.extraSalaryAmount.toFixed(2)), 1333.33);
+  assert.equal(Number(report.netSalary.toFixed(2)), 11333.33);
 });
 
-test("salary deduction begins only after the configured four paid off-days", () => {
-  const noDeduction = calculateSalary({ staff, shop, month: "2026-06", attendanceRecords: presentRecords(22) });
-  const oneDayDeduction = calculateSalary({ staff, shop, month: "2026-06", attendanceRecords: presentRecords(21) });
+test("an absent day deducts one daily rate while extra salary days remain payable", () => {
+  const report = calculateSalary({ staff, shop, month: "2026-06", attendanceRecords: [...records(29), ...records(1, "absent")] });
 
-  assert.equal(noDeduction.payableDays, 26);
-  assert.equal(noDeduction.netSalary, 10000);
-  assert.equal(oneDayDeduction.salaryDeductedAbsentDays, 1);
-  assert.equal(Math.round(oneDayDeduction.netSalary), 9615);
+  assert.equal(report.salaryDeductedAbsentDays, 1);
+  assert.equal(report.payableDays, 33);
+  assert.equal(Number(report.netSalary.toFixed(2)), 11000);
 });
 
-test("recorded advance is deducted from final salary", () => {
+test("a half-day earns exactly half of the calendar-day salary", () => {
+  const report = calculateSalary({ staff, shop, month: "2026-06", attendanceRecords: [...records(29), ...records(1, "half-day")] });
+
+  assert.equal(report.halfDays, 1);
+  assert.equal(report.payableDays, 33.5);
+  assert.equal(Number(report.halfDayDeduction.toFixed(2)), 166.67);
+  assert.equal(Number(report.netSalary.toFixed(2)), 11166.67);
+});
+
+test("recorded advance is deducted from the salary including extra paid days", () => {
   const report = calculateSalary({
     staff,
     shop,
     month: "2026-06",
-    attendanceRecords: presentRecords(26),
+    attendanceRecords: records(30),
     advanceDeduction: 2000,
   });
 
   assert.equal(report.advanceDeduction, 2000);
   assert.equal(report.totalDeductions, 2000);
-  assert.equal(report.netSalary, 8000);
+  assert.equal(Number(report.netSalary.toFixed(2)), 9333.33);
 });
 
-test("half-day and unpaid leave reduce payable salary", () => {
+test("shop settings control the number of extra salary days", () => {
   const report = calculateSalary({
     staff,
-    shop: { ...shop, monthlyPaidOffDays: 0 },
+    shop: { monthlyExtraPaidDays: 2 },
     month: "2026-06",
-    attendanceRecords: [...presentRecords(24), { status: "half-day", dayStatus: "half-day" }],
-    approvedLeaves: [{ fromDate: "2026-06-30", toDate: "2026-06-30", leaveType: "Unpaid Leave" }],
+    attendanceRecords: records(30),
   });
 
-  assert.equal(report.halfDays, 1);
-  assert.equal(report.unpaidLeaves, 1);
-  assert.equal(report.payableDays, 24.5);
-  assert.equal(Math.round(report.netSalary), 9423);
+  assert.equal(report.monthlyExtraPaidDays, 2);
+  assert.equal(report.payableDays, 32);
+  assert.equal(Number(report.netSalary.toFixed(2)), 10666.67);
 });
 
-test("editable paid off-day allowance changes the deduction boundary", () => {
-  const report = calculateSalary({
-    staff,
-    shop: { weeklyOffDay: "Sunday", monthlyPaidOffDays: 2 },
-    month: "2026-06",
-    attendanceRecords: presentRecords(23),
-  });
+test("daily salary automatically follows the selected month's calendar length", () => {
+  const report = calculateSalary({ staff, shop, month: "2026-07", attendanceRecords: records(31) });
 
-  assert.equal(report.paidOffDaysUsed, 2);
-  assert.equal(report.salaryDeductedAbsentDays, 1);
-  assert.equal(report.payableDays, 25);
+  assert.equal(report.calendarDays, 31);
+  assert.equal(Number(report.perDaySalary.toFixed(2)), 322.58);
+  assert.equal(Number(report.netSalary.toFixed(2)), 11290.32);
 });
 
-test("None weekly off counts every calendar day as a working day", () => {
+test("legacy shop settings retain their configured extra-day value", () => {
   const report = calculateSalary({
     staff,
-    shop: { weeklyOffDay: "None", monthlyPaidOffDays: 0 },
+    shop: { monthlyPaidOffDays: 3 },
     month: "2026-06",
-    attendanceRecords: presentRecords(30),
+    attendanceRecords: records(30),
   });
 
-  assert.equal(report.workingDays, 30);
-  assert.equal(report.payableDays, 30);
-  assert.equal(report.netSalary, 10000);
+  assert.equal(report.monthlyExtraPaidDays, 3);
+  assert.equal(Number(report.netSalary.toFixed(2)), 11000);
 });

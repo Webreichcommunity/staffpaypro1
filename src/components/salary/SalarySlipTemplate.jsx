@@ -21,13 +21,15 @@ export const SalarySlipTemplate = ({ report, shop, staff }) => (
     <div className="grid gap-x-4 gap-y-2 p-3.5 text-xs sm:grid-cols-2 sm:p-4">
       {[
             ["Basic salary", money(report?.monthlySalary)],
-            ["Working days", report?.workingDays],
+            ["Calendar days", report?.calendarDays || report?.workingDays],
             ["Payable days", report?.payableDays || 0],
-            ["Paid off-days used", `${report?.paidOffDaysUsed || 0} of ${report?.monthlyPaidOffDays || 0}`],
+            ["Extra paid days", report?.monthlyExtraPaidDays ?? report?.monthlyPaidOffDays ?? 0],
+            ["Extra salary amount", money(report?.extraSalaryAmount)],
             ["Salary-deducted absence days", report?.salaryDeductedAbsentDays || 0],
             ["Present / Absent / Half days", `${report?.presentDays || 0} / ${report?.absentDays || 0} / ${report?.halfDays || 0}`],
             ["Paid / Unpaid leaves", `${report?.paidLeaves || 0} / ${report?.unpaidLeaves || 0}`],
-            ["Attendance earned salary", money(report?.attendanceSalary)],
+            ["Base attendance salary", money(report?.baseEarnedSalary ?? (Number(report?.attendanceSalary || 0) - Number(report?.extraSalaryAmount || 0)))],
+            ["Total earned with extra days", money(report?.attendanceSalary)],
             ["Attendance / leave deduction", money(report?.absentDeduction)],
             ["Bonus + Overtime", money(Number(report?.bonus || 0) + Number(report?.overtimeAmount || 0))],
             ["Advance deduction", money(report?.advanceDeduction)],

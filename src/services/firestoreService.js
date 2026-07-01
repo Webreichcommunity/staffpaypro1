@@ -2,6 +2,7 @@ import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -44,7 +45,7 @@ export const ensureAdminShop = async (user, profile) => {
       fullDayHours: 8,
       halfDayHours: 4,
       weeklyOffDay: "Sunday",
-      monthlyPaidOffDays: 4,
+      monthlyExtraPaidDays: 4,
       attendanceRadiusMeters: 100,
       location: { lat: 0, lng: 0 },
       createdAt: serverTimestamp(),
@@ -58,13 +59,13 @@ export const ensureAdminShop = async (user, profile) => {
 export const saveShopSettings = async (shopId, values) => {
   const location = normalizeLocation(values.location);
   const attendanceRadiusMeters = Number(values.attendanceRadiusMeters);
-  const monthlyPaidOffDays = Number(values.monthlyPaidOffDays ?? 4);
+  const monthlyExtraPaidDays = Number(values.monthlyExtraPaidDays ?? values.monthlyPaidOffDays ?? 4);
   if (!isValidLocation(location)) throw new Error("Set a valid shop latitude and longitude before saving.");
   if (!Number.isFinite(attendanceRadiusMeters) || attendanceRadiusMeters <= 0) {
     throw new Error("Attendance radius must be greater than 0 meters.");
   }
-  if (!Number.isInteger(monthlyPaidOffDays) || monthlyPaidOffDays < 0) {
-    throw new Error("Monthly paid absence allowance must be a whole number of 0 or more days.");
+  if (!Number.isInteger(monthlyExtraPaidDays) || monthlyExtraPaidDays < 0) {
+    throw new Error("Monthly extra salary days must be a whole number of 0 or more days.");
   }
 
   return setDoc(
@@ -74,7 +75,7 @@ export const saveShopSettings = async (shopId, values) => {
       graceMinutes: Number(values.graceMinutes || 0),
       fullDayHours: Number(values.fullDayHours || 8),
       halfDayHours: Number(values.halfDayHours || 4),
-      monthlyPaidOffDays,
+      monthlyExtraPaidDays,
       attendanceRadiusMeters,
       location,
       updatedAt: serverTimestamp(),
@@ -152,6 +153,8 @@ export const punchIn = async ({ userProfile, shop, location }) => {
       isLate,
       lateMinutes: isLate ? nowMinutes - lateAfter : 0,
       markedBy: "self",
+      calendarOverride: deleteField(),
+      calendarOriginal: deleteField(),
       createdAt: existing?.createdAt || serverTimestamp(),
       updatedAt: serverTimestamp(),
     }, { merge: true });
@@ -287,6 +290,113 @@ export const saveBulkManualAttendance = async ({ shopId, date, staff, selections
     }, { merge: true });
   });
   await batch.commit();
+};
+
+const calendarDayStatus = (status) => status === "present" ? "full-day" : status;
+
+const withoutCalendarOverride = (data = {}) => {
+  const restored = { ...data };
+  delete restored.calendarOverride;
+  delete restored.calendarOriginal;
+  return restored;
+};
+
+export const setStaffCalendarAttendance = async ({ shopId, staffId, date, status, changedBy }) => {
+  const attendanceRef = getAttendanceRef(shopId, date, staffId);
+  const correctionRef = doc(collection(db, "attendanceCorrections"));
+
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(attendanceRef);
+    const existing = snapshot.exists() ? snapshot.data() : null;
+    const original = existing?.calendarOverride ? existing.calendarOriginal || null : existing;
+
+    if (!status) {
+      if (!existing?.calendarOverride) return;
+      if (original) transaction.set(attendanceRef, { ...original, updatedAt: serverTimestamp() });
+      else transaction.delete(attendanceRef);
+    } else {
+      transaction.set(attendanceRef, {
+        staffId,
+        shopId,
+        date,
+        status,
+        dayStatus: calendarDayStatus(status),
+        punchInTime: null,
+        punchOutTime: null,
+        totalWorkingHours: status === "absent" ? 0 : null,
+        isLate: false,
+        markedBy: "admin",
+        changedBy,
+        manualReason: "Staff profile calendar update",
+        calendarOverride: true,
+        calendarOriginal: original ? withoutCalendarOverride(original) : null,
+        createdAt: existing?.createdAt || serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    transaction.set(correctionRef, {
+      shopId,
+      staffId,
+      date,
+      changedBy,
+      oldData: existing || {},
+      newData: status ? { status, dayStatus: calendarDayStatus(status) } : original || {},
+      reason: status ? `Calendar status changed to ${status}` : "Calendar override restored",
+      type: "staff-calendar-update",
+      createdAt: serverTimestamp(),
+    });
+  });
+};
+
+export const setStaffMonthAttendance = async ({ shopId, staffId, dates, status, changedBy }) => {
+  await runTransaction(db, async (transaction) => {
+    const entries = await Promise.all(dates.map(async (date) => {
+      const attendanceRef = getAttendanceRef(shopId, date, staffId);
+      const snapshot = await transaction.get(attendanceRef);
+      return { date, attendanceRef, existing: snapshot.exists() ? snapshot.data() : null };
+    }));
+
+    entries.forEach(({ date, attendanceRef, existing }) => {
+      const original = existing?.calendarOverride ? existing.calendarOriginal || null : existing;
+      if (!status) {
+        if (!existing?.calendarOverride) return;
+        if (original) transaction.set(attendanceRef, { ...original, updatedAt: serverTimestamp() });
+        else transaction.delete(attendanceRef);
+      } else {
+        transaction.set(attendanceRef, {
+          staffId,
+          shopId,
+          date,
+          status,
+          dayStatus: calendarDayStatus(status),
+          punchInTime: null,
+          punchOutTime: null,
+          totalWorkingHours: status === "absent" ? 0 : null,
+          isLate: false,
+          markedBy: "admin",
+          changedBy,
+          manualReason: "Bulk staff profile calendar update",
+          calendarOverride: true,
+          calendarOriginal: original ? withoutCalendarOverride(original) : null,
+          createdAt: existing?.createdAt || serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      transaction.set(doc(collection(db, "attendanceCorrections")), {
+        shopId,
+        staffId,
+        date,
+        changedBy,
+        oldData: existing || {},
+        newData: status ? { status, dayStatus: calendarDayStatus(status) } : original || {},
+        reason: status ? `Bulk calendar status changed to ${status}` : "Bulk calendar override restored",
+        type: "staff-calendar-bulk-update",
+        createdAt: serverTimestamp(),
+      });
+    });
+  });
 };
 
 export const applyLeave = async ({ userProfile, staffName, values }) =>

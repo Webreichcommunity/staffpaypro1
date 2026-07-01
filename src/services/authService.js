@@ -12,9 +12,22 @@ import {
 } from "firebase/auth";
 import { collection, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, where } from "firebase/firestore";
 import { auth, db, firebaseConfig } from "../Firebase/config";
+import { createFriendlyAuthError, isTransientAuthError } from "../utils/authErrors";
 import { isIOSDevice } from "../utils/platformUtils";
 
 const normalizeLoginAlias = (value = "") => value.trim().toLowerCase();
+
+const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+const signInWithNetworkRetry = async (email, password) => {
+  try {
+    return await signInWithEmailAndPassword(auth, email, password);
+  } catch (error) {
+    if (!isTransientAuthError(error)) throw error;
+    await wait(500);
+    return signInWithEmailAndPassword(auth, email, password);
+  }
+};
 
 export const resolveLoginEmail = async (identifier) => {
   const value = identifier.trim();
@@ -29,44 +42,58 @@ export const resolveLoginEmail = async (identifier) => {
 };
 
 export const loginWithIdentifier = async (identifier, password) => {
-  const email = await resolveLoginEmail(identifier);
-  let credential = await signInWithEmailAndPassword(auth, email, password);
-  const profileSnapshot = await getDoc(doc(db, "users", credential.user.uid));
-  const profile = profileSnapshot.exists() ? profileSnapshot.data() : null;
+  try {
+    const email = await resolveLoginEmail(identifier);
+    let credential = await signInWithNetworkRetry(email, password);
+    const profileSnapshot = await getDoc(doc(db, "users", credential.user.uid));
+    const profile = profileSnapshot.exists() ? profileSnapshot.data() : null;
 
-  // Firebase Google popups lose their opener/session state in iOS Safari and
-  // installed iOS PWAs. The password session and Firestore profile have
-  // already been verified at this point, so avoid the unsupported popup there.
-  if (profile?.role === "staff" && !isIOSDevice()) {
-    try {
-      const expectedEmail = String(profile.email || credential.user.email || "").trim().toLowerCase();
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ login_hint: expectedEmail, prompt: "select_account" });
-      const hasGoogleProvider = credential.user.providerData.some((item) => item.providerId === "google.com");
-      const googleResult = hasGoogleProvider
-        ? await reauthenticateWithPopup(credential.user, provider)
-        : await linkWithPopup(credential.user, provider);
-      const googleCredential = GoogleAuthProvider.credentialFromResult(googleResult);
-      const googleEmail = googleResult.user.providerData
-        .find((item) => item.providerId === "google.com")
-        ?.email?.trim().toLowerCase();
-
-      if (!expectedEmail || googleEmail !== expectedEmail || !googleCredential) {
-        if (!hasGoogleProvider) {
-          await unlink(credential.user, "google.com").catch(() => {});
-        }
-        throw new Error(`Select the Google account registered for this staff profile: ${expectedEmail}.`);
-      }
-
-      await signOut(auth);
-      credential = await signInWithCredential(auth, googleCredential);
-    } catch (error) {
+    if (!profile) {
       await signOut(auth).catch(() => {});
-      throw error;
+      throw new Error("Your account profile was not found. Contact the administrator.");
     }
-  }
 
-  return { credential, profile };
+    if (profile.isActive === false) {
+      await signOut(auth).catch(() => {});
+      throw new Error("This account is inactive. Contact the administrator.");
+    }
+
+    // Firebase Google popups lose their opener/session state in iOS Safari and
+    // installed iOS PWAs. The password session and Firestore profile have
+    // already been verified at this point, so avoid the unsupported popup there.
+    if (profile.role === "staff" && !isIOSDevice()) {
+      try {
+        const expectedEmail = String(profile.email || credential.user.email || "").trim().toLowerCase();
+        const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ login_hint: expectedEmail, prompt: "select_account" });
+        const hasGoogleProvider = credential.user.providerData.some((item) => item.providerId === "google.com");
+        const googleResult = hasGoogleProvider
+          ? await reauthenticateWithPopup(credential.user, provider)
+          : await linkWithPopup(credential.user, provider);
+        const googleCredential = GoogleAuthProvider.credentialFromResult(googleResult);
+        const googleEmail = googleResult.user.providerData
+          .find((item) => item.providerId === "google.com")
+          ?.email?.trim().toLowerCase();
+
+        if (!expectedEmail || googleEmail !== expectedEmail || !googleCredential) {
+          if (!hasGoogleProvider) {
+            await unlink(credential.user, "google.com").catch(() => {});
+          }
+          throw new Error(`Select the Google account registered for this staff profile: ${expectedEmail}.`);
+        }
+
+        await signOut(auth);
+        credential = await signInWithCredential(auth, googleCredential);
+      } catch (error) {
+        await signOut(auth).catch(() => {});
+        throw error;
+      }
+    }
+
+    return { credential, profile };
+  } catch (error) {
+    throw createFriendlyAuthError(error);
+  }
 };
 
 export const hasExistingAdmin = async () => {
@@ -107,7 +134,7 @@ export const createMainAdminAccount = async (form) => {
       fullDayHours: 8,
       halfDayHours: 4,
       weeklyOffDay: "Sunday",
-      monthlyPaidOffDays: 4,
+      monthlyExtraPaidDays: 4,
       attendanceRadiusMeters: 100,
       location: { lat: 0, lng: 0 },
       createdAt: serverTimestamp(),

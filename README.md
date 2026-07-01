@@ -52,6 +52,7 @@ Attendance punch timestamps are written with Firebase `serverTimestamp()`. Staff
 
 - Role protected admin and staff routes
 - Admin dashboard, staff management, shop settings, locally rotating QR, attendance, leaves, salary reports, slips, and payments
+- Month calendar on every admin staff profile with single-day status cycling, full-month bulk marking, and restoration of original staff punch records
 - Staff mobile PWA dashboard, password plus matching-Google-account verification where supported, iOS-compatible login, QR scan, GPS radius validation, punch in/out, leave requests, attendance history, profile, and salary slips
-- Salary PDF download with monthly calculations
+- Calendar-day salary calculation with shop-configurable extra paid days, half-day rates, attendance deductions, and matching reports/PDF slips
 - PWA manifest, app icon, service worker, and installable mobile layout
